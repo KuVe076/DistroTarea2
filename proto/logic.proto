@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package proto;
+
+// Asegúrate que esta opción coincida con tu estructura de módulo y directorio
+option go_package = "DISTROTAREA2/proto/proto";
+
+service ContactarLCP {
+    // El entrenador consulta los torneos disponibles
+    rpc ConsultarTorneosDisponibles(TorneosRequest) returns (TorneosResponse) {}
+
+    // El entrenador intenta inscribirse en un torneo específico
+    rpc InscribirTorneo(InscripcionRequest) returns (InscripcionResponse) {}
+}
+
+// --- Mensajes para ConsultarTorneosDisponibles ---
+message Torneo {
+    string id = 1;     // ID único del torneo
+    string region = 2; // Región del torneo
+}
+
+message TorneosRequest {
+    string solicitante_info = 1; // ej: "Entrenador cliente solicitando torneos"
+}
+
+message TorneosResponse {
+    repeated Torneo torneos = 1;
+}
+
+// --- Mensajes para InscribirTorneo ---
+message InscripcionRequest {
+    string torneo_id = 1;
+    string entrenador_id = 2;
+    string entrenador_nombre = 3; // Útil para logs en el servidor
+    string entrenador_region = 4; // Podría ser útil para validaciones en el servidor
+    int32 entrenador_suspension_dias = 5; // Días de suspensión actuales del entrenador
+}
+
+// Enum para especificar la razón del rechazo de inscripción
+enum RazonRechazoInscripcion {
+    RAZON_DESCONOCIDA = 0;                // Razón no especificada o desconocida
+    RECHAZO_POR_SUSPENSION = 1;           // Entrenador está suspendido
+    RECHAZO_YA_INSCRITO_OTRO_TORNEO = 2;  // Entrenador ya inscrito en un torneo diferente
+    RECHAZO_TORNEO_NO_EXISTE = 3;         // El torneo solicitado no existe
+    // RECHAZO_TORNEO_LLENO = 4; // CAMBIO: Eliminado o comentado
+}
+
+message InscripcionResponse {
+    bool exito = 1;                            // true si la inscripción fue exitosa, false si no
+    string mensaje = 2;                        // Mensaje descriptivo del resultado
+    string torneo_id_confirmado = 3;           // El ID del torneo al que se inscribió (si exito=true)
+    RazonRechazoInscripcion razon_rechazo = 4; // Razón específica si exito = false
+}
