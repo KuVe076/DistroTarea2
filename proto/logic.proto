@@ -2,52 +2,58 @@ syntax = "proto3";
 
 package proto;
 
-// Asegúrate que esta opción coincida con tu estructura de módulo y directorio
-option go_package = "DISTROTAREA2/proto/proto";
+option go_package = "DISTROTAREA2/proto"; // Asegúrate que coincida con tu módulo
 
-service ContactarLCP {
-    // El entrenador consulta los torneos disponibles
-    rpc ConsultarTorneosDisponibles(TorneosRequest) returns (TorneosResponse) {}
-
-    // El entrenador intenta inscribirse en un torneo específico
-    rpc InscribirTorneo(InscripcionRequest) returns (InscripcionResponse) {}
+// El servicio ContactarLCP lo renombraremos a LigaPokemon para seguir el PDF.
+service LigaPokemon { // RENOMBRADO
+    rpc ConsultarTorneosDisponibles(ConsultaTorneosReq) returns (ListaTorneosResp);
+    rpc InscribirEnTorneo(InscripcionTorneoReq) returns (ResultadoInscripcionResp);
 }
 
-// --- Mensajes para ConsultarTorneosDisponibles ---
 message Torneo {
-    string id = 1;     // ID único del torneo
-    string region = 2; // Región del torneo
+    string id = 1;
+    string region = 2;
 }
 
-message TorneosRequest {
-    string solicitante_info = 1; // ej: "Entrenador cliente solicitando torneos"
+message ConsultaTorneosReq {
+    string solicitante_info = 1; // Cambiado de entrenador_id para ser más genérico
 }
 
-message TorneosResponse {
+message ListaTorneosResp {
     repeated Torneo torneos = 1;
 }
 
-// --- Mensajes para InscribirTorneo ---
-message InscripcionRequest {
+message InscripcionTorneoReq {
     string torneo_id = 1;
     string entrenador_id = 2;
-    string entrenador_nombre = 3; // Útil para logs en el servidor
-    string entrenador_region = 4; // Podría ser útil para validaciones en el servidor
-    int32 entrenador_suspension_dias = 5; // Días de suspensión actuales del entrenador
+    string entrenador_nombre = 3;
+    string entrenador_region = 4;
+    // El cliente envía la suspensión que CREE tener. LCP validará con su propio registro.
+    // El PDF (pág 4, tabla) muestra que LCP mantiene el estado y suspensión.
+    // La regla de suspensión (pág 5) indica que LCP decrementa.
+    // Así que el cliente no necesita enviar su suspensión, LCP la conoce o la deduce.
+    // Pero para que LCP sepa que el entrenador INTENTA y así aplicar la regla de decremento,
+    // podemos mantenerlo o LCP simplemente lo aplica si el entrenador está suspendido en sus registros.
+    // Por ahora, lo quitaré y LCP usará su propio registro.
+    // int32 entrenador_suspension_actual = 5; // QUITADO
+    // string entrenador_estado_actual = 6;    // QUITADO
 }
 
-// Enum para especificar la razón del rechazo de inscripción
-enum RazonRechazoInscripcion {
-    RAZON_DESCONOCIDA = 0;                // Razón no especificada o desconocida
-    RECHAZO_POR_SUSPENSION = 1;           // Entrenador está suspendido
-    RECHAZO_YA_INSCRITO_OTRO_TORNEO = 2;  // Entrenador ya inscrito en un torneo diferente
-    RECHAZO_TORNEO_NO_EXISTE = 3;         // El torneo solicitado no existe
-    // RECHAZO_TORNEO_LLENO = 4; // CAMBIO: Eliminado o comentado
+enum RazonRechazo {
+    RAZON_NO_ESPECIFICADA = 0;
+    RECHAZO_SUSPENDIDO = 1;
+    RECHAZO_YA_INSCRITO_EN_OTRO_TORNEO = 2; // Más específico
+    RECHAZO_TORNEO_NO_EXISTE = 3;
+    RECHAZO_ENTRENADOR_EXPULSADO = 4;
+    // No necesitamos RECHAZO_ESTADO_INVALIDO si tenemos RECHAZO_ENTRENADOR_EXPULSADO
 }
 
-message InscripcionResponse {
-    bool exito = 1;                            // true si la inscripción fue exitosa, false si no
-    string mensaje = 2;                        // Mensaje descriptivo del resultado
-    string torneo_id_confirmado = 3;           // El ID del torneo al que se inscribió (si exito=true)
-    RazonRechazoInscripcion razon_rechazo = 4; // Razón específica si exito = false
+message ResultadoInscripcionResp {
+    bool exito = 1;
+    string mensaje = 2;
+    string torneo_id_confirmado = 3;           // Si exito = true
+    // LCP devuelve el nuevo estado y suspensión para que el cliente se sincronice.
+    int32 nueva_suspension_entrenador = 4;
+    string nuevo_estado_entrenador = 5;        // "Activo", "Suspendido"
+    RazonRechazo razon_rechazo = 6;            // Si exito = false
 }

@@ -36,6 +36,18 @@ type serverGimnasio struct {
 	rabbitMQConn	*amqp.Connection
 }
 
+const []regiones{
+	"Kanto",
+	"Johto",
+	"Hoenn",
+	"Sinnoh",
+	"Teselia",
+	"Kalos",
+	"Alola",
+	"Galar",
+	"Paldea",
+}
+
 func NewGimnasioServer(nombre, region string, aesKey []byte, conn *amqp.Connection, ch *amqp.Channel) *serverGimnasio {
 	mrand.Seed(time.Now().UnixNano())
 	return &serverGimnasio{
@@ -187,9 +199,74 @@ func ConnectToRabbitMQ(url string) (*amqp.Connection, *amqp.Channel, error) {
 	return conn, ch, nil
 }
 
-func main() {
-	 
+func IniciarServerGimnasio(nombreGimnasio string, region string, aesKey []byte, chRabbit *amqp.Channel, port string) {
+	lis, err := net.listen("tcp", port)
+	if err != nil {
+		log.Fatalf("Error al escuchar: %v", err)
+	}
+
+	grpcServer := grpc.NewServer()
+	gymServer := NewGimnasioServer(nombreGimnasio, region, aesKey, connRabbit, chRabbit)
+
+	pb.RegisterGimnasioServer(grpcServer, gymServer)
+	log.Printf("Gimnasio %s escuchando en %v", nombreGimnasio, lis.Addr())
+	if err := grpcServer.Serve(lis); err != nil {
+		log.Printf("El Gimnasio %s fallo al servir GRPC", nombreGimnasio)
+	}
 }
+
+func main() {
+	PassKanto := "SushiSashimiTempuraWasabiMirin"
+	PassJohto := "RamenUdonSobaYakitoriTonkatsu"
+	PassHoenn := "MisoDashiShoyuGariSakeChawan"
+	PassSinnoh := "TeriyakiOkonomiyakiGyozaUnagi"
+	PassTeselia := "MatchaSakuraMochiAnkoDangoYuzu"
+	PassKalos := "KatsuCurryDonburiNattoEdamame"
+	PassAlola := "TeppanyakiFuguOnigiriTsukune"
+	PassGalar := "NigiriMakiGunkanInariTamagoDo"
+	PassPaldea := "BentoBoxShabuKushikatsuKinpira"
+	
+	keyKanto := []byte(passKanto)
+	keyJohto := []byte(passJohto)
+	keyHoenn := []byte(passHoenn)
+	keySinnoh := []byte(passSinnoh)
+	keyTeselia := []byte(passTeselia)
+	keyKalos := []byte(passKalos)
+	keyAlola := []byte(passAlola)
+	keyGalar := []byte(passGalar)
+	keyPaldea := []byte(passPaldea)
+	
+	GymKeys := [][]byte{
+		keyKanto, 
+		keyJohto,
+		keyHoenn,
+		keySinnoh, 
+		keyTeselia, 
+		keyKalos, 
+		keyAlola, 
+		keyGalar, 
+		keyPaldea,
+	}
+
+	GymNames := []string{
+		"Gimnasio Agua",
+		"Gimnasio Tierra",
+		"Gimnasio Fuego",
+		"Gimnasio Viento",
+		"Gimnasio Éter",
+		"Gimnasio Sopa",
+		"Gimnasio Baba",
+		"Gimnasio Madera",
+		"Gimnasio Veneno",
+	}
+
+	for i := 0; i < 9; i++ {
+		
+	}
+
+
+}
+
 
 
 

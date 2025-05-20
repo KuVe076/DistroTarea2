@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -13,255 +14,210 @@ import (
 	"time"
 
 	pb "DISTROTAREA2/proto"
+	"github.com/streadway/amqp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type Entrenador struct {
-	ID               string
-	Name             string
-	Region           string
-	Suspension       int
-	TournamentStatus string
-	IdTournament     string
+const (
+	lcpGrpcAddress = "lcp:50051"
+	rabbitMQURL = "amqp://guest:guest@rabbitmq:5672/"
+	snpPublishesExchange   = "snp_publishes_notifications_exchange" // Exchange del que el entrenador consume
+	jsonEntrenadoresFile = "/entrenadores_pequeno.json"
+)
+
+type EntrenadorApp struct {
+	ID               string; Nombre string; Region string; Ranking int
+	Estado           string // "Activo", "Suspendido", "Expulsado" (actualizado por LCP/SNP)
+	Suspension       int    // Días de suspensión (actualizado por LCP/SNP)
+	TournamentStatus string // "NoInscrito", "InscritoEnLCP", etc.
+	IdTorneoActual   string
 	EsManual         bool
 	mu               sync.Mutex
+	lcpCliente       pb.LigaPokemonClient
+	rabbitMQChannel *amqp.Channel
+	notifyQueueName string
+}
+type EntrenadorJSON struct {ID string `json:"id"`; Nombre string `json:"nombre"`; Region string `json:"region"`; Ranking int `json:"ranking"`; Estado string `json:"estado"`; Suspension int `json:"suspension"`}
+type NotificacionParaEntrenador struct {TipoNotificacion string `json:"tipo_notificacion"`; Mensaje string `json:"mensaje"`; EntrenadorID string `json:"entrenador_id"`; TorneoID string `json:"torneo_id,omitempty"`; RegionTorneo string `json:"region_torneo,omitempty"`; Timestamp string `json:"timestamp"`} // Coincidir con SNP
+
+func nuevoEntrenadorApp(e EntrenadorJSON, esM bool, lcpC *grpc.ClientConn, rC *amqp.Connection) (*EntrenadorApp, error) {
+	app := &EntrenadorApp{ID: e.ID, Nombre: e.Nombre, Region: e.Region, Ranking: e.Ranking, Estado: e.Estado, Suspension: e.Suspension, TournamentStatus: "NoInscrito", EsManual: esM, lcpCliente: pb.NewLigaPokemonClient(lcpC)}
+	var err error; var q amqp.Queue
+	app.rabbitMQChannel, err = rC.Channel(); if err != nil { return nil, fmt.Errorf("[%s] Rabbit Chan: %w", app.ID, err) }
+	err = app.rabbitMQChannel.ExchangeDeclare(snpPublishesExchange, "direct", true, false, false, false, nil); if err != nil { return nil, fmt.Errorf("[%s] SNP ExDeclare: %w", app.ID, err) }
+	// Cola exclusiva, auto-borrable para cada entrenador
+	q, err = app.rabbitMQChannel.QueueDeclare(fmt.Sprintf("entrenador_%s_notify_q", strings.ReplaceAll(app.ID, " ", "_")), false, true, true, false, nil); if err != nil { return nil, fmt.Errorf("[%s] QDeclare: %w", app.ID, err) }
+	app.notifyQueueName = q.Name
+	rk := fmt.Sprintf("notify.entrenador.%s", app.ID); err = app.rabbitMQChannel.QueueBind(app.notifyQueueName, rk, snpPublishesExchange, false, nil); if err != nil { return nil, fmt.Errorf("[%s] QBind: %w", app.ID, err) }
+	log.Printf("[%s] Suscrito a notificaciones (Cola: %s, RK: %s)", app.ID, app.notifyQueueName, rk); return app, nil
 }
 
-func obtenerYFiltrarTorneosDesdeLCP(ctx context.Context, clientLCP pb.ContactarLCPClient, regionEntrenador string, nombreEntrenador string) ([]*pb.Torneo, error) {
-	log.Printf("[%s] Consultando torneos disponibles a LCP...", nombreEntrenador)
-	respuestaLCP, err := clientLCP.ConsultarTorneosDisponibles(ctx, &pb.TorneosRequest{
-		SolicitanteInfo: fmt.Sprintf("Entrenador %s", nombreEntrenador),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("no se pudo obtener la lista de torneos de LCP: %w", err)
-	}
-	if respuestaLCP == nil || len(respuestaLCP.Torneos) == 0 {
-		return nil, fmt.Errorf("LCP no reportó torneos disponibles en este momento")
-	}
-	var torneosEnRegion []*pb.Torneo
-	for _, torneo := range respuestaLCP.Torneos {
-		if torneo.Region == regionEntrenador {
-			torneosEnRegion = append(torneosEnRegion, torneo)
+func (app *EntrenadorApp) escucharNotificaciones() {
+	if app.rabbitMQChannel == nil { log.Printf("[%s] RabbitMQ no init.", app.ID); return }
+	var msgs <-chan amqp.Delivery; var errConsume error
+	msgs, errConsume = app.rabbitMQChannel.Consume(app.notifyQueueName, "", true, true, false, false, nil)
+	if errConsume != nil { log.Printf("[%s] Falló consumidor notif: %v", app.ID, errConsume); return }
+	log.Printf("[%s] Escuchando notificaciones del SNP...", app.ID)
+	for d := range msgs {
+		fmt.Printf("\n[%s] === NOTIFICACIÓN RECIBIDA ===\n%s\n===============================\n", app.ID, string(d.Body))
+		if app.EsManual { fmt.Print("Elige una opción: ") } // Para que el prompt del menú no se pise
+		
+		var notif NotificacionParaEntrenador; var errUnmarshal error
+		errUnmarshal = json.Unmarshal(d.Body, &notif)
+		if errUnmarshal != nil { log.Printf("[%s] Error decodificar notif: %v", app.ID, errUnmarshal); continue }
+		
+		app.mu.Lock()
+		// Actualizar estado basado en notificaciones relevantes
+		if notif.TipoNotificacion == "CONFIRMACION_INSCRIPCION" && notif.EntrenadorID == app.ID {
+			app.TournamentStatus = "InscritoEnLCP"; app.IdTorneoActual = notif.TorneoID
+			app.Estado = "Activo"; app.Suspension = 0 // LCP confirma el estado
+			log.Printf("[%s] Estado actualizado por notificación de inscripción.", app.ID)
+		} else if notif.TipoNotificacion == "RECHAZO_INSCRIPCION_SUSPENSION" && notif.EntrenadorID == app.ID {
+			// La suspensión ya se actualizó en la respuesta gRPC de LCP.
+			// Esta notificación es solo informativa.
+			log.Printf("[%s] Notificación de rechazo por suspensión recibida.", app.ID)
 		}
+		// Aquí se manejarían otras notificaciones como cambios de ranking, nuevos torneos, etc.
+		app.mu.Unlock()
 	}
-	if len(torneosEnRegion) == 0 {
-		return nil, fmt.Errorf("LCP no tiene torneos disponibles en tu región '%s'", regionEntrenador)
-	}
-	return torneosEnRegion, nil
+	log.Printf("[%s] Consumidor de notificaciones terminado.", app.ID)
 }
 
-func elegirTorneoManualmente(ctx context.Context, clientLCP pb.ContactarLCPClient, entrenador *Entrenador) (*pb.Torneo, error) {
-	log.Printf("ENTRENADOR MANUAL [%s]: Buscando torneos en LCP para tu región %s...", entrenador.Name, entrenador.Region)
-	torneosEnRegion, err := obtenerYFiltrarTorneosDesdeLCP(ctx, clientLCP, entrenador.Region, entrenador.Name)
-	if err != nil {
-		return nil, err
-	}
-	fmt.Printf("\n--- Entrenador %s, elige un torneo en %s (de LCP) ---\n", entrenador.Name, entrenador.Region)
-	for i, torneo := range torneosEnRegion {
-		fmt.Printf("%d. Torneo ID: %s (Región: %s)\n", i+1, torneo.Id, torneo.Region)
-	}
-	fmt.Printf("0. No inscribirse / Saltar\n")
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		fmt.Print("Ingresa el número del torneo de tu elección: ")
-		input, _ := reader.ReadString('\n')
-		choice, err := strconv.Atoi(strings.TrimSpace(input))
-		if err != nil {
-			fmt.Println("Entrada inválida. Por favor, ingresa un número.")
-			continue
-		}
-		if choice == 0 {
-			return nil, fmt.Errorf("decidiste no inscribirte manualmente en este momento")
-		}
-		if choice > 0 && choice <= len(torneosEnRegion) {
-			return torneosEnRegion[choice-1], nil
-		}
-		fmt.Printf("Opción inválida. Elige un número entre 1 y %d, o 0 para saltar.\n", len(torneosEnRegion))
-	}
+func (app *EntrenadorApp) consultarTorneosYMostrar(ctx context.Context) []*pb.Torneo {
+	log.Printf("[%s] Consultando torneos a LCP...", app.Nombre)
+	var resp *pb.ListaTorneosResp; var err error
+	resp, err = app.lcpCliente.ConsultarTorneosDisponibles(ctx, &pb.ConsultaTorneosReq{SolicitanteInfo: app.Nombre})
+	if err != nil { log.Printf("[%s] Error consultar torneos: %v", app.Nombre, err); fmt.Printf("Error al consultar torneos.\n"); return nil }
+	if len(resp.GetTorneos()) == 0 { fmt.Printf("[%s] No hay torneos disponibles en este momento.\n", app.Nombre); return nil }
+	fmt.Printf("\n[%s] Torneos Disponibles:\n", app.Nombre)
+	for i, t := range resp.GetTorneos() { fmt.Printf("  %d. ID: %s, Región: %s\n", i+1, t.Id, t.Region) }
+	return resp.GetTorneos()
 }
 
-func elegirTorneoAutomaticamente(ctx context.Context, clientLCP pb.ContactarLCPClient, entrenador *Entrenador) (*pb.Torneo, error) {
-	log.Printf("ENTRENADOR AUTO [%s]: Buscando torneos en LCP para la región %s...", entrenador.Name, entrenador.Region)
-	torneosEnRegion, err := obtenerYFiltrarTorneosDesdeLCP(ctx, clientLCP, entrenador.Region, entrenador.Name)
-	if err != nil {
-		return nil, err
-	}
-	localRand := rand.New(rand.NewSource(time.Now().UnixNano() + int64(os.Getpid())))
-	indiceTorneo := localRand.Intn(len(torneosEnRegion))
-	return torneosEnRegion[indiceTorneo], nil
-}
+func (app *EntrenadorApp) intentarInscripcionTorneo(ctx context.Context, torneoID string) {
+	app.mu.Lock(); estadoActual := app.Estado; app.mu.Unlock() // No necesitamos enviar suspensión, LCP la tiene
+	log.Printf("[%s] Intentando inscribirse en torneo %s (Estado LCP conocido: %s)", app.Nombre, torneoID, estadoActual)
+	req := &pb.InscripcionTorneoReq{TorneoId: torneoID, EntrenadorId: app.ID, EntrenadorNombre: app.Nombre, EntrenadorRegion: app.Region}
+	
+	var resp *pb.ResultadoInscripcionResp; var errInscribir error
+	resp, errInscribir = app.lcpCliente.InscribirEnTorneo(ctx, req)
+	if errInscribir != nil { log.Printf("[%s] Error gRPC al inscribir: %v", app.Nombre, errInscribir); fmt.Printf("[%s] Falló la inscripción: %v\n", app.Nombre, errInscribir); return }
 
-func intentarInscripcionEntrenador(ctx context.Context, clientLCP pb.ContactarLCPClient, entrenador *Entrenador) {
-	entrenador.mu.Lock()
-	currentSuspension := entrenador.Suspension
-	entrenador.mu.Unlock()
-
-	log.Printf("[%s] Iniciando intento de inscripción (Manual: %t, Suspensión actual: %d días, Estado Torneo: %s)",
-		entrenador.Name, entrenador.EsManual, currentSuspension, entrenador.TournamentStatus)
-
-	if entrenador.TournamentStatus == "InscritoEnLCP" {
-		log.Printf("[%s] ya tiene estado 'InscritoEnLCP' para torneo %s. No se reintenta.", entrenador.Name, entrenador.IdTournament)
-		return
-	}
-
-	var torneoEscogido *pb.Torneo
-	var err error
-
-	if entrenador.EsManual {
-		torneoEscogido, err = elegirTorneoManualmente(ctx, clientLCP, entrenador)
+	app.mu.Lock()
+	app.Suspension = int(resp.GetNuevaSuspensionEntrenador()) // Actualizar con lo que dice LCP
+	app.Estado = resp.GetNuevoEstadoEntrenador()             // Actualizar con lo que dice LCP
+	if resp.GetExito() {
+		app.TournamentStatus = "InscritoEnLCP"; app.IdTorneoActual = resp.GetTorneoIdConfirmado()
+		fmt.Printf("[%s] ¡Inscripción exitosa al torneo %s! %s\n", app.Nombre, resp.GetTorneoIdConfirmado(), resp.GetMensaje())
 	} else {
-		torneoEscogido, err = elegirTorneoAutomaticamente(ctx, clientLCP, entrenador)
+		app.TournamentStatus = "RechazadoPorLCP"; app.IdTorneoActual = ""
+		fmt.Printf("[%s] Inscripción rechazada: %s (Razón: %s). Nueva suspensión LCP: %d, Nuevo estado LCP: %s\n",
+			app.Nombre, resp.GetMensaje(), resp.GetRazonRechazo(), app.Suspension, app.Estado)
 	}
+	app.mu.Unlock()
+}
+func (app *EntrenadorApp) mostrarEstadoActual() { /* ... (igual que la versión anterior) ... */ app.mu.Lock(); defer app.mu.Unlock(); fmt.Printf("\n--- Estado de %s (ID:%s) ---\nRegión: %s\nRanking: %d\nEstado General LCP: %s\nSuspensión LCP: %d\nEstado Torneo: %s", app.Nombre, app.ID, app.Region, app.Ranking, app.Estado, app.Suspension, app.TournamentStatus); if app.IdTorneoActual != "" { fmt.Printf(" (En Torneo ID: %s)", app.IdTorneoActual) }; fmt.Println("\n-------------------------------") }
 
-	if err != nil {
-		log.Printf("[%s] Error al elegir torneo: %v", entrenador.Name, err)
-		entrenador.TournamentStatus = "FalloEleccionTorneo"
-		return
-	}
-	if torneoEscogido == nil {
-		log.Printf("[%s] no seleccionó un torneo o no hay disponibles en su región.", entrenador.Name)
-		entrenador.TournamentStatus = "NoInscrito (Sin selección/Disponibilidad)"
-		return
-	}
+func cargarEntrenadoresJSON(f string) ([]EntrenadorJSON, error) { /* ... (igual que la versión anterior) ... */ var d []byte; var errRF error; d, errRF = os.ReadFile(f); if errRF != nil { return nil, fmt.Errorf("leer %s: %w", f, errRF) }; var e []EntrenadorJSON; var errU error; errU = json.Unmarshal(d, &e); if errU != nil { return nil, fmt.Errorf("JSON %s: %w", f, errU) }; return e, nil }
+func obtenerDatosEntrenadorManual() EntrenadorJSON { /* ... (igual que la versión anterior) ... */ r := bufio.NewReader(os.Stdin); fmt.Println("\n--- Configuración Entrenador Consola ---"); var id, n, reg string; for { fmt.Print("ID Entrenador: "); id, _ = r.ReadString('\n'); id = strings.TrimSpace(id); if id != "" { break } }; for { fmt.Print("Nombre: "); n, _ = r.ReadString('\n'); n = strings.TrimSpace(n); if n != "" { break } }; for { fmt.Print("Región: "); reg, _ = r.ReadString('\n'); reg = strings.TrimSpace(reg); if reg != "" { break } }; return EntrenadorJSON{ID: id, Nombre: n, Region: reg, Ranking: 1500, Estado: "Activo", Suspension: 0} }
 
-	log.Printf("[%s] ha escogido el torneo ID: %s (Región: %s). Intentando inscripción en LCP...", entrenador.Name, torneoEscogido.Id, torneoEscogido.Region)
-	entrenador.TournamentStatus = "PendienteInscripcionLCP"
+// Simula el comportamiento de un entrenador automático
+func simularEntrenadorAutomatico(ctx context.Context, app *EntrenadorApp) {
+	log.Printf("[%s AUTO] Iniciando simulación de comportamiento.", app.Nombre)
+	// Pequeño delay inicial aleatorio para desfasar los automáticos
+	time.Sleep(time.Duration(rand.Intn(5000)+1000) * time.Millisecond)
 
-	reqInscripcion := &pb.InscripcionRequest{
-		TorneoId:                 torneoEscogido.Id,
-		EntrenadorId:             entrenador.ID,
-		EntrenadorNombre:         entrenador.Name,
-		EntrenadorRegion:         entrenador.Region,
-		EntrenadorSuspensionDias: int32(currentSuspension),
-	}
+	for { // Bucle de "vida" del entrenador automático
+		select {
+		case <-ctx.Done(): // Si el contexto principal del programa se cancela
+			log.Printf("[%s AUTO] Contexto cancelado, terminando simulación.", app.Nombre)
+			return
+		default:
+			// Lógica de decisión del entrenador automático
+			app.mu.Lock()
+			puedeIntentarInscripcion := app.TournamentStatus != "InscritoEnLCP" && app.Estado != "Expulsado"
+			app.mu.Unlock()
 
-	respInscripcion, err := clientLCP.InscribirTorneo(ctx, reqInscripcion)
-	if err != nil {
-		log.Printf("[%s] Error gRPC al intentar inscribirse en el torneo %s: %v", entrenador.Name, torneoEscogido.Id, err)
-		entrenador.TournamentStatus = "RechazadoPorLCP (Error gRPC)"
-		entrenador.IdTournament = ""
-		return
-	}
-
-	if respInscripcion.GetExito() {
-		entrenador.TournamentStatus = "InscritoEnLCP"
-		entrenador.IdTournament = respInscripcion.GetTorneoIdConfirmado()
-		log.Printf("[%s] ¡INSCRIPCIÓN EXITOSA en LCP! Torneo: %s. Mensaje LCP: %s", entrenador.Name, entrenador.IdTournament, respInscripcion.GetMensaje())
-	} else {
-		log.Printf("[%s] LCP RECHAZÓ la inscripción en el torneo %s. Mensaje LCP: '%s' (Razón: %s)",
-			entrenador.Name, torneoEscogido.Id, respInscripcion.GetMensaje(), respInscripcion.GetRazonRechazo())
-		entrenador.TournamentStatus = "RechazadoPorLCP"
-		entrenador.IdTournament = ""
-
-		if respInscripcion.GetRazonRechazo() == pb.RazonRechazoInscripcion_RECHAZO_POR_SUSPENSION {
-			entrenador.mu.Lock()
-			if entrenador.Suspension > 0 {
-				entrenador.Suspension--
-				log.Printf("[%s] Suspensión reducida a %d días debido a intento fallido por suspensión.", entrenador.Name, entrenador.Suspension)
+			if puedeIntentarInscripcion {
+				log.Printf("[%s AUTO] Intentando inscribirse en un torneo...", app.Nombre)
+				// Crear un contexto para esta operación específica
+				opCtx, opCancel := context.WithTimeout(ctx, 30*time.Second)
+				
+				listaTorneos := app.consultarTorneosYMostrar(opCtx) // Consultar y obtener la lista
+				if len(listaTorneos) > 0 {
+					var candidatos []*pb.Torneo
+					for _, t := range listaTorneos { if t.Region == app.Region { candidatos = append(candidatos, t) } }
+					
+					var torneoElegido *pb.Torneo
+					if len(candidatos) > 0 {
+						torneoElegido = candidatos[rand.Intn(len(candidatos))]
+					} else { // Si no hay en su región, elige cualquiera
+						torneoElegido = listaTorneos[rand.Intn(len(listaTorneos))]
+					}
+					log.Printf("[%s AUTO] Eligió torneo %s. Intentando inscripción.", app.Nombre, torneoElegido.Id)
+					app.intentarInscripcionTorneo(opCtx, torneoElegido.Id)
+				} else {
+					log.Printf("[%s AUTO] No hay torneos disponibles para intentar inscripción.", app.Nombre)
+				}
+				opCancel()
 			}
-			entrenador.mu.Unlock()
+			// Esperar un tiempo aleatorio antes del próximo intento/acción
+			// Esto simula que el entrenador hace otras cosas o que los eventos de torneo ocurren espaciados.
+			// La "Regla de Suspensión" implica que el intento de inscripción es lo que decrementa.
+			tiempoEspera := time.Duration(rand.Intn(25)+15) * time.Second // Entre 15 y 40 segundos
+			log.Printf("[%s AUTO] Esperando %v para la próxima acción.", app.Nombre, tiempoEspera)
+			time.Sleep(tiempoEspera)
 		}
 	}
 }
+
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-	lcpAddress := "localhost:50051"
-	connLCP, err := grpc.Dial(lcpAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
-	if err != nil {
-		log.Fatalf("CLIENTE: No se pudo conectar al servidor LCP en %s: %v", lcpAddress, err)
+	rand.Seed(time.Now().UnixNano()); log.SetFlags(log.Ltime | log.Lshortfile)
+	var err error; var connLCP *grpc.ClientConn; var connRabbit *amqp.Connection
+	connLCP, err = grpc.Dial(lcpGrpcAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock()); if err != nil { log.Fatalf("CLIENTE: No conectar LCP: %v", err) }; defer connLCP.Close(); log.Println("CLIENTE: Conectado LCP.")
+	connRabbit, err = amqp.Dial(rabbitMQURL); if err != nil { log.Fatalf("CLIENTE: No conectar RabbitMQ: %s", err) }; defer connRabbit.Close(); log.Println("CLIENTE: Conectado RabbitMQ.")
+
+	manualData := obtenerDatosEntrenadorManual()
+	entrenadorManualApp, err := nuevoEntrenadorApp(manualData, true, connLCP, connRabbit); if err != nil { log.Fatalf("Error creando manual: %v", err) }
+	go entrenadorManualApp.escucharNotificaciones()
+
+	entrenadoresJSON, err := cargarEntrenadoresJSON(jsonEntrenadoresFile); if err != nil { log.Printf("WARN: No cargar JSON %s: %v", jsonEntrenadoresFile, err) }
+	for _, eJSON := range entrenadoresJSON { if eJSON.ID == entrenadorManualApp.ID { continue }
+		app, errAppAuto := nuevoEntrenadorApp(eJSON, false, connLCP, connRabbit); if errAppAuto != nil { log.Printf("Error creando auto %s: %v", eJSON.ID, errAppAuto); continue }
+		go app.escucharNotificaciones()
+		// Crear un contexto para la goroutine del entrenador automático que pueda ser cancelado
+		autoCtx, autoCancel := context.WithCancel(context.Background())
+		defer autoCancel() // Asegurar que se cancele al salir de main (o manejarlo más granularmente)
+		go simularEntrenadorAutomatico(autoCtx, app)
 	}
-	defer connLCP.Close()
-	clientLCP := pb.NewContactarLCPClient(connLCP)
-	log.Printf("CLIENTE: Conectado al servidor LCP en %s", lcpAddress)
+	log.Printf("Entrenador manual y %d automáticos inicializados (si se cargó JSON).", len(entrenadoresJSON))
 
-	numEntrenadores := 10
-	regionesEntrenador := []string{"Kanto", "Johto", "Hoenn", "Sinnoh"}
-	entrenadores := make([]*Entrenador, numEntrenadores)
-
-	for i := 0; i < numEntrenadores; i++ {
-		suspensionInicial := 0
-		if i == 1 || i == 4 || i == 7 {
-			suspensionInicial = rand.Intn(3) + 1
-		}
-		entrenadores[i] = &Entrenador{
-			ID:               fmt.Sprintf("E%03d", i+1),
-			Name:             fmt.Sprintf("Entrenador%02d", i+1),
-			Region:           regionesEntrenador[rand.Intn(len(regionesEntrenador))],
-			Suspension:       suspensionInicial,
-			TournamentStatus: "NoInscrito",
-			EsManual:         (i == 0),
-		}
-		if entrenadores[i].EsManual {
-			entrenadores[i].Name = "Ash Ketchum (Manual)"
-			entrenadores[i].Region = "Kanto"
-			entrenadores[i].Suspension = 0
-		}
-	}
-
-	numCiclosDeSimulacion := 4
-	for ciclo := 0; ciclo < numCiclosDeSimulacion; ciclo++ {
-		log.Printf("\n------------------- INICIO CICLO DE INSCRIPCIÓN #%d -------------------\n", ciclo+1)
-		var wg sync.WaitGroup
-		ctxCiclo, cancelCiclo := context.WithTimeout(context.Background(), 2*time.Minute)
-
-		if entrenadores[0].EsManual && ciclo == 0 {
-			log.Printf("\n--- Esperando acción del entrenador manual: %s ---\n", entrenadores[0].Name)
-			intentarInscripcionEntrenador(ctxCiclo, clientLCP, entrenadores[0])
-			log.Printf("--- Acción del entrenador manual %s completada ---\n", entrenadores[0].Name)
-		}
-
-		for i := 0; i < len(entrenadores); i++ {
-			if entrenadores[i].EsManual && ciclo > 0 && entrenadores[i].TournamentStatus != "InscritoEnLCP" {
-				log.Printf("[%s] (Manual) intentando de nuevo automáticamente en ciclo %d.", entrenadores[i].Name, ciclo+1)
-			} else if entrenadores[i].EsManual && ciclo > 0 {
-				continue
-			} else if entrenadores[i].EsManual && ciclo == 0 {
-				continue
+	// Menú interactivo para el entrenador manual
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Printf("\n--- Menú Entrenador [%s] ---\n", entrenadorManualApp.Nombre)
+		fmt.Println("1. Consultar Torneos Disponibles"); fmt.Println("2. Inscribirse en Torneo")
+		fmt.Println("3. Ver mi Estado"); fmt.Println("4. Salir"); fmt.Print("Elige una opción: ")
+		input, _ := reader.ReadString('\n'); choiceStr := strings.TrimSpace(input); choice, errConv := strconv.Atoi(choiceStr)
+		if errConv != nil { fmt.Println("Opción inválida."); continue }
+		ctxMenu, cancelMenu := context.WithTimeout(context.Background(), 1*time.Minute)
+		switch choice {
+		case 1: entrenadorManualApp.consultarTorneosYMostrar(ctxMenu)
+		case 2:
+			listaParaElegir := entrenadorManualApp.consultarTorneosYMostrar(ctxMenu)
+			if len(listaParaElegir) > 0 {
+				fmt.Print("Ingresa el NÚMERO del torneo para inscribirte (0 para cancelar): ")
+				torneoNumStr, _ := reader.ReadString('\n'); torneoNum, errAtoi := strconv.Atoi(strings.TrimSpace(torneoNumStr))
+				if errAtoi == nil && torneoNum > 0 && torneoNum <= len(listaParaElegir) {
+					entrenadorManualApp.intentarInscripcionTorneo(ctxMenu, listaParaElegir[torneoNum-1].Id)
+				} else if torneoNum == 0 { fmt.Println("Inscripción cancelada.") } else { fmt.Println("Selección de torneo inválida.") }
 			}
-
-			if entrenadores[i].TournamentStatus != "InscritoEnLCP" {
-				wg.Add(1)
-				go func(e *Entrenador, cicloActual int) {
-					defer wg.Done()
-					ctxLlamada, cancelLlamada := context.WithTimeout(context.Background(), 30*time.Second)
-					defer cancelLlamada()
-					time.Sleep(time.Duration(rand.Intn(150)+50) * time.Millisecond)
-					log.Printf("--- [%s] intentando en Ciclo %d ---", e.Name, cicloActual+1)
-					intentarInscripcionEntrenador(ctxLlamada, clientLCP, e)
-				}(entrenadores[i], ciclo)
-			}
+		case 3: entrenadorManualApp.mostrarEstadoActual()
+		case 4: fmt.Println("Saliendo..."); cancelMenu(); return // Salir del programa
+		default: fmt.Println("Opción no válida.")
 		}
-		wg.Wait()
-		cancelCiclo()
-
-		log.Printf("\n------------------- ESTADO FINAL CICLO #%d -------------------", ciclo+1)
-		todosElegiblesInscritos := true
-		for _, e := range entrenadores {
-			log.Printf("ID: %s, Nombre: %s, Región: %s, Suspensión: %d, Estado Torneo: %s (Torneo ID: %s)",
-				e.ID, e.Name, e.Region, e.Suspension, e.TournamentStatus, e.IdTournament)
-			if !e.EsManual && e.TournamentStatus != "InscritoEnLCP" && e.Suspension == 0 {
-				todosElegiblesInscritos = false
-			}
-		}
-		log.Printf("----------------------------------------------------------------------\n")
-
-		if todosElegiblesInscritos && ciclo > 0 {
-			log.Println("Todos los entrenadores automáticos elegibles se han inscrito. Finalizando simulación de ciclos.")
-			break
-		}
-
-		if ciclo < numCiclosDeSimulacion-1 {
-			log.Println("...Esperando 1 segundo para el próximo ciclo de intentos...")
-			time.Sleep(1 * time.Second)
-		}
-	}
-
-	log.Println("\n========= SIMULACIÓN DE INSCRIPCIÓN FINALIZADA =========")
-	log.Println("Estado final de todos los entrenadores:")
-	for _, e := range entrenadores {
-		log.Printf("ID: %s, Nombre: %s, Suspensión: %d, Estado Torneo: %s (Torneo ID: %s)",
-			e.ID, e.Name, e.Suspension, e.TournamentStatus, e.IdTournament)
+		cancelMenu()
 	}
 }

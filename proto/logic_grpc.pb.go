@@ -19,143 +19,143 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ContactarLCP_ConsultarTorneosDisponibles_FullMethodName = "/proto.ContactarLCP/ConsultarTorneosDisponibles"
-	ContactarLCP_InscribirTorneo_FullMethodName             = "/proto.ContactarLCP/InscribirTorneo"
+	LigaPokemon_ConsultarTorneosDisponibles_FullMethodName = "/proto.LigaPokemon/ConsultarTorneosDisponibles"
+	LigaPokemon_InscribirEnTorneo_FullMethodName           = "/proto.LigaPokemon/InscribirEnTorneo"
 )
 
-// ContactarLCPClient is the client API for ContactarLCP service.
+// LigaPokemonClient is the client API for LigaPokemon service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type ContactarLCPClient interface {
-	// El entrenador consulta los torneos disponibles
-	ConsultarTorneosDisponibles(ctx context.Context, in *TorneosRequest, opts ...grpc.CallOption) (*TorneosResponse, error)
-	// El entrenador intenta inscribirse en un torneo específico
-	InscribirTorneo(ctx context.Context, in *InscripcionRequest, opts ...grpc.CallOption) (*InscripcionResponse, error)
+//
+// El servicio ContactarLCP lo renombraremos a LigaPokemon para seguir el PDF.
+type LigaPokemonClient interface {
+	ConsultarTorneosDisponibles(ctx context.Context, in *ConsultaTorneosReq, opts ...grpc.CallOption) (*ListaTorneosResp, error)
+	InscribirEnTorneo(ctx context.Context, in *InscripcionTorneoReq, opts ...grpc.CallOption) (*ResultadoInscripcionResp, error)
 }
 
-type contactarLCPClient struct {
+type ligaPokemonClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewContactarLCPClient(cc grpc.ClientConnInterface) ContactarLCPClient {
-	return &contactarLCPClient{cc}
+func NewLigaPokemonClient(cc grpc.ClientConnInterface) LigaPokemonClient {
+	return &ligaPokemonClient{cc}
 }
 
-func (c *contactarLCPClient) ConsultarTorneosDisponibles(ctx context.Context, in *TorneosRequest, opts ...grpc.CallOption) (*TorneosResponse, error) {
+func (c *ligaPokemonClient) ConsultarTorneosDisponibles(ctx context.Context, in *ConsultaTorneosReq, opts ...grpc.CallOption) (*ListaTorneosResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(TorneosResponse)
-	err := c.cc.Invoke(ctx, ContactarLCP_ConsultarTorneosDisponibles_FullMethodName, in, out, cOpts...)
+	out := new(ListaTorneosResp)
+	err := c.cc.Invoke(ctx, LigaPokemon_ConsultarTorneosDisponibles_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *contactarLCPClient) InscribirTorneo(ctx context.Context, in *InscripcionRequest, opts ...grpc.CallOption) (*InscripcionResponse, error) {
+func (c *ligaPokemonClient) InscribirEnTorneo(ctx context.Context, in *InscripcionTorneoReq, opts ...grpc.CallOption) (*ResultadoInscripcionResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(InscripcionResponse)
-	err := c.cc.Invoke(ctx, ContactarLCP_InscribirTorneo_FullMethodName, in, out, cOpts...)
+	out := new(ResultadoInscripcionResp)
+	err := c.cc.Invoke(ctx, LigaPokemon_InscribirEnTorneo_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// ContactarLCPServer is the server API for ContactarLCP service.
-// All implementations must embed UnimplementedContactarLCPServer
+// LigaPokemonServer is the server API for LigaPokemon service.
+// All implementations must embed UnimplementedLigaPokemonServer
 // for forward compatibility.
-type ContactarLCPServer interface {
-	// El entrenador consulta los torneos disponibles
-	ConsultarTorneosDisponibles(context.Context, *TorneosRequest) (*TorneosResponse, error)
-	// El entrenador intenta inscribirse en un torneo específico
-	InscribirTorneo(context.Context, *InscripcionRequest) (*InscripcionResponse, error)
-	mustEmbedUnimplementedContactarLCPServer()
+//
+// El servicio ContactarLCP lo renombraremos a LigaPokemon para seguir el PDF.
+type LigaPokemonServer interface {
+	ConsultarTorneosDisponibles(context.Context, *ConsultaTorneosReq) (*ListaTorneosResp, error)
+	InscribirEnTorneo(context.Context, *InscripcionTorneoReq) (*ResultadoInscripcionResp, error)
+	mustEmbedUnimplementedLigaPokemonServer()
 }
 
-// UnimplementedContactarLCPServer must be embedded to have
+// UnimplementedLigaPokemonServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedContactarLCPServer struct{}
+type UnimplementedLigaPokemonServer struct{}
 
-func (UnimplementedContactarLCPServer) ConsultarTorneosDisponibles(context.Context, *TorneosRequest) (*TorneosResponse, error) {
+func (UnimplementedLigaPokemonServer) ConsultarTorneosDisponibles(context.Context, *ConsultaTorneosReq) (*ListaTorneosResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ConsultarTorneosDisponibles not implemented")
 }
-func (UnimplementedContactarLCPServer) InscribirTorneo(context.Context, *InscripcionRequest) (*InscripcionResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method InscribirTorneo not implemented")
+func (UnimplementedLigaPokemonServer) InscribirEnTorneo(context.Context, *InscripcionTorneoReq) (*ResultadoInscripcionResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InscribirEnTorneo not implemented")
 }
-func (UnimplementedContactarLCPServer) mustEmbedUnimplementedContactarLCPServer() {}
-func (UnimplementedContactarLCPServer) testEmbeddedByValue()                      {}
+func (UnimplementedLigaPokemonServer) mustEmbedUnimplementedLigaPokemonServer() {}
+func (UnimplementedLigaPokemonServer) testEmbeddedByValue()                     {}
 
-// UnsafeContactarLCPServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to ContactarLCPServer will
+// UnsafeLigaPokemonServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to LigaPokemonServer will
 // result in compilation errors.
-type UnsafeContactarLCPServer interface {
-	mustEmbedUnimplementedContactarLCPServer()
+type UnsafeLigaPokemonServer interface {
+	mustEmbedUnimplementedLigaPokemonServer()
 }
 
-func RegisterContactarLCPServer(s grpc.ServiceRegistrar, srv ContactarLCPServer) {
-	// If the following call pancis, it indicates UnimplementedContactarLCPServer was
+func RegisterLigaPokemonServer(s grpc.ServiceRegistrar, srv LigaPokemonServer) {
+	// If the following call pancis, it indicates UnimplementedLigaPokemonServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&ContactarLCP_ServiceDesc, srv)
+	s.RegisterService(&LigaPokemon_ServiceDesc, srv)
 }
 
-func _ContactarLCP_ConsultarTorneosDisponibles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TorneosRequest)
+func _LigaPokemon_ConsultarTorneosDisponibles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConsultaTorneosReq)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ContactarLCPServer).ConsultarTorneosDisponibles(ctx, in)
+		return srv.(LigaPokemonServer).ConsultarTorneosDisponibles(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ContactarLCP_ConsultarTorneosDisponibles_FullMethodName,
+		FullMethod: LigaPokemon_ConsultarTorneosDisponibles_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ContactarLCPServer).ConsultarTorneosDisponibles(ctx, req.(*TorneosRequest))
+		return srv.(LigaPokemonServer).ConsultarTorneosDisponibles(ctx, req.(*ConsultaTorneosReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ContactarLCP_InscribirTorneo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(InscripcionRequest)
+func _LigaPokemon_InscribirEnTorneo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InscripcionTorneoReq)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ContactarLCPServer).InscribirTorneo(ctx, in)
+		return srv.(LigaPokemonServer).InscribirEnTorneo(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ContactarLCP_InscribirTorneo_FullMethodName,
+		FullMethod: LigaPokemon_InscribirEnTorneo_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ContactarLCPServer).InscribirTorneo(ctx, req.(*InscripcionRequest))
+		return srv.(LigaPokemonServer).InscribirEnTorneo(ctx, req.(*InscripcionTorneoReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// ContactarLCP_ServiceDesc is the grpc.ServiceDesc for ContactarLCP service.
+// LigaPokemon_ServiceDesc is the grpc.ServiceDesc for LigaPokemon service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var ContactarLCP_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "proto.ContactarLCP",
-	HandlerType: (*ContactarLCPServer)(nil),
+var LigaPokemon_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "proto.LigaPokemon",
+	HandlerType: (*LigaPokemonServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "ConsultarTorneosDisponibles",
-			Handler:    _ContactarLCP_ConsultarTorneosDisponibles_Handler,
+			Handler:    _LigaPokemon_ConsultarTorneosDisponibles_Handler,
 		},
 		{
-			MethodName: "InscribirTorneo",
-			Handler:    _ContactarLCP_InscribirTorneo_Handler,
+			MethodName: "InscribirEnTorneo",
+			Handler:    _LigaPokemon_InscribirEnTorneo_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

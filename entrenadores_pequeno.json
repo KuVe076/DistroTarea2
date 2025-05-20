@@ -1,0 +1,82 @@
+[
+    {
+        "id": "001",
+        "nombre": "David Allen",
+        "region": "Kanto",
+        "ranking": 1066,
+        "estado": "Activo",
+        "suspension": 0
+    },
+    {
+        "id": "002",
+        "nombre": "Deborah Richardson",
+        "region": "Johto",
+        "ranking": 1604,
+        "estado": "Activo",
+        "suspension": 0
+    },
+    {
+        "id": "003",
+        "nombre": "Fernando Olsen",
+        "region": "Sinnoh",
+        "ranking": 1875,
+        "estado": "Suspendido",
+        "suspension": 5
+    },
+    {
+        "id": "004",
+        "nombre": "Roger Roberts",
+        "region": "Hoenn",
+        "ranking": 1063,
+        "estado": "Activo",
+        "suspension": 0
+    },
+    {
+        "id": "005",
+        "nombre": "Carrie Stewart",
+        "region": "Kanto",
+        "ranking": 1576,
+        "estado": "Activo",
+        "suspension": 0
+    },
+    {
+        "id": "006",
+        "nombre": "Matthew Watson",
+        "region": "Johto",
+        "ranking": 1602,
+        "estado": "Expulsado",
+        "suspension": 0
+    },
+    {
+        "id": "007",
+        "nombre": "Tammy Grant",
+        "region": "Sinnoh",
+        "ranking": 1355,
+        "estado": "Activo",
+        "suspension": 0
+    },
+    {
+        "id": "008",
+        "nombre": "Emily Bender",
+        "region": "Unova",
+        "ranking": 1020,
+        "estado": "Activo",
+        "suspension": 0
+    },
+    {
+        "id": "009",
+        "nombre": "Matthew George",
+        "region": "Unova",
+        "ranking": 1949,
+        "estado": "Activo",
+        "suspension": 0
+    },
+    {
+        "id": "010",
+        "nombre": "Warren Carlson",
+        "region": "Sinnoh",
+        "ranking": 1831,
+        "estado": "Suspendido",
+        "suspension": 2
+    }
+]
