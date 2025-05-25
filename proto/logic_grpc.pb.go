@@ -27,7 +27,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// El servicio ContactarLCP lo renombraremos a LigaPokemon para seguir el PDF.
+// --- Servicio de la Liga Pokemon para Entrenadores ---
 type LigaPokemonClient interface {
 	ConsultarTorneosDisponibles(ctx context.Context, in *ConsultaTorneosReq, opts ...grpc.CallOption) (*ListaTorneosResp, error)
 	InscribirEnTorneo(ctx context.Context, in *InscripcionTorneoReq, opts ...grpc.CallOption) (*ResultadoInscripcionResp, error)
@@ -65,7 +65,7 @@ func (c *ligaPokemonClient) InscribirEnTorneo(ctx context.Context, in *Inscripci
 // All implementations must embed UnimplementedLigaPokemonServer
 // for forward compatibility.
 //
-// El servicio ContactarLCP lo renombraremos a LigaPokemon para seguir el PDF.
+// --- Servicio de la Liga Pokemon para Entrenadores ---
 type LigaPokemonServer interface {
 	ConsultarTorneosDisponibles(context.Context, *ConsultaTorneosReq) (*ListaTorneosResp, error)
 	InscribirEnTorneo(context.Context, *InscripcionTorneoReq) (*ResultadoInscripcionResp, error)
@@ -156,6 +156,112 @@ var LigaPokemon_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InscribirEnTorneo",
 			Handler:    _LigaPokemon_InscribirEnTorneo_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "proto/logic.proto",
+}
+
+const (
+	Gimnasio_AsignarCombate_FullMethodName = "/proto.Gimnasio/AsignarCombate"
+)
+
+// GimnasioClient is the client API for Gimnasio service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// --- Servicio del Gimnasio Regional para LCP ---
+type GimnasioClient interface {
+	AsignarCombate(ctx context.Context, in *AsignarCombateRequest, opts ...grpc.CallOption) (*AsignarCombateResponse, error)
+}
+
+type gimnasioClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewGimnasioClient(cc grpc.ClientConnInterface) GimnasioClient {
+	return &gimnasioClient{cc}
+}
+
+func (c *gimnasioClient) AsignarCombate(ctx context.Context, in *AsignarCombateRequest, opts ...grpc.CallOption) (*AsignarCombateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AsignarCombateResponse)
+	err := c.cc.Invoke(ctx, Gimnasio_AsignarCombate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GimnasioServer is the server API for Gimnasio service.
+// All implementations must embed UnimplementedGimnasioServer
+// for forward compatibility.
+//
+// --- Servicio del Gimnasio Regional para LCP ---
+type GimnasioServer interface {
+	AsignarCombate(context.Context, *AsignarCombateRequest) (*AsignarCombateResponse, error)
+	mustEmbedUnimplementedGimnasioServer()
+}
+
+// UnimplementedGimnasioServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedGimnasioServer struct{}
+
+func (UnimplementedGimnasioServer) AsignarCombate(context.Context, *AsignarCombateRequest) (*AsignarCombateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AsignarCombate not implemented")
+}
+func (UnimplementedGimnasioServer) mustEmbedUnimplementedGimnasioServer() {}
+func (UnimplementedGimnasioServer) testEmbeddedByValue()                  {}
+
+// UnsafeGimnasioServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to GimnasioServer will
+// result in compilation errors.
+type UnsafeGimnasioServer interface {
+	mustEmbedUnimplementedGimnasioServer()
+}
+
+func RegisterGimnasioServer(s grpc.ServiceRegistrar, srv GimnasioServer) {
+	// If the following call pancis, it indicates UnimplementedGimnasioServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&Gimnasio_ServiceDesc, srv)
+}
+
+func _Gimnasio_AsignarCombate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AsignarCombateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GimnasioServer).AsignarCombate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Gimnasio_AsignarCombate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GimnasioServer).AsignarCombate(ctx, req.(*AsignarCombateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// Gimnasio_ServiceDesc is the grpc.ServiceDesc for Gimnasio service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var Gimnasio_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "proto.Gimnasio",
+	HandlerType: (*GimnasioServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "AsignarCombate",
+			Handler:    _Gimnasio_AsignarCombate_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

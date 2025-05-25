@@ -26,9 +26,10 @@ type RazonRechazo int32
 const (
 	RazonRechazo_RAZON_NO_ESPECIFICADA              RazonRechazo = 0
 	RazonRechazo_RECHAZO_SUSPENDIDO                 RazonRechazo = 1
-	RazonRechazo_RECHAZO_YA_INSCRITO_EN_OTRO_TORNEO RazonRechazo = 2 // Más específico
+	RazonRechazo_RECHAZO_YA_INSCRITO_EN_OTRO_TORNEO RazonRechazo = 2
 	RazonRechazo_RECHAZO_TORNEO_NO_EXISTE           RazonRechazo = 3
-	RazonRechazo_RECHAZO_ENTRENADOR_EXPULSADO       RazonRechazo = 4 // No necesitamos RECHAZO_ESTADO_INVALIDO si tenemos RECHAZO_ENTRENADOR_EXPULSADO
+	RazonRechazo_RECHAZO_ENTRENADOR_EXPULSADO       RazonRechazo = 4
+	RazonRechazo_RECHAZO_TORNEO_REGION_INCORRECTA   RazonRechazo = 5
 )
 
 // Enum value maps for RazonRechazo.
@@ -39,6 +40,7 @@ var (
 		2: "RECHAZO_YA_INSCRITO_EN_OTRO_TORNEO",
 		3: "RECHAZO_TORNEO_NO_EXISTE",
 		4: "RECHAZO_ENTRENADOR_EXPULSADO",
+		5: "RECHAZO_TORNEO_REGION_INCORRECTA",
 	}
 	RazonRechazo_value = map[string]int32{
 		"RAZON_NO_ESPECIFICADA":              0,
@@ -46,6 +48,7 @@ var (
 		"RECHAZO_YA_INSCRITO_EN_OTRO_TORNEO": 2,
 		"RECHAZO_TORNEO_NO_EXISTE":           3,
 		"RECHAZO_ENTRENADOR_EXPULSADO":       4,
+		"RECHAZO_TORNEO_REGION_INCORRECTA":   5,
 	}
 )
 
@@ -130,7 +133,7 @@ func (x *Torneo) GetRegion() string {
 
 type ConsultaTorneosReq struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	SolicitanteInfo string                 `protobuf:"bytes,1,opt,name=solicitante_info,json=solicitanteInfo,proto3" json:"solicitante_info,omitempty"` // Cambiado de entrenador_id para ser más genérico
+	SolicitanteInfo string                 `protobuf:"bytes,1,opt,name=solicitante_info,json=solicitanteInfo,proto3" json:"solicitante_info,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -285,14 +288,13 @@ func (x *InscripcionTorneoReq) GetEntrenadorRegion() string {
 }
 
 type ResultadoInscripcionResp struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Exito              bool                   `protobuf:"varint,1,opt,name=exito,proto3" json:"exito,omitempty"`
-	Mensaje            string                 `protobuf:"bytes,2,opt,name=mensaje,proto3" json:"mensaje,omitempty"`
-	TorneoIdConfirmado string                 `protobuf:"bytes,3,opt,name=torneo_id_confirmado,json=torneoIdConfirmado,proto3" json:"torneo_id_confirmado,omitempty"` // Si exito = true
-	// LCP devuelve el nuevo estado y suspensión para que el cliente se sincronice.
-	NuevaSuspensionEntrenador int32        `protobuf:"varint,4,opt,name=nueva_suspension_entrenador,json=nuevaSuspensionEntrenador,proto3" json:"nueva_suspension_entrenador,omitempty"`
-	NuevoEstadoEntrenador     string       `protobuf:"bytes,5,opt,name=nuevo_estado_entrenador,json=nuevoEstadoEntrenador,proto3" json:"nuevo_estado_entrenador,omitempty"` // "Activo", "Suspendido"
-	RazonRechazo              RazonRechazo `protobuf:"varint,6,opt,name=razon_rechazo,json=razonRechazo,proto3,enum=proto.RazonRechazo" json:"razon_rechazo,omitempty"`     // Si exito = false
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	Exito                     bool                   `protobuf:"varint,1,opt,name=exito,proto3" json:"exito,omitempty"`
+	Mensaje                   string                 `protobuf:"bytes,2,opt,name=mensaje,proto3" json:"mensaje,omitempty"`
+	TorneoIdConfirmado        string                 `protobuf:"bytes,3,opt,name=torneo_id_confirmado,json=torneoIdConfirmado,proto3" json:"torneo_id_confirmado,omitempty"`
+	NuevaSuspensionEntrenador int32                  `protobuf:"varint,4,opt,name=nueva_suspension_entrenador,json=nuevaSuspensionEntrenador,proto3" json:"nueva_suspension_entrenador,omitempty"`
+	NuevoEstadoEntrenador     string                 `protobuf:"bytes,5,opt,name=nuevo_estado_entrenador,json=nuevoEstadoEntrenador,proto3" json:"nuevo_estado_entrenador,omitempty"`
+	RazonRechazo              RazonRechazo           `protobuf:"varint,6,opt,name=razon_rechazo,json=razonRechazo,proto3,enum=proto.RazonRechazo" json:"razon_rechazo,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -369,6 +371,194 @@ func (x *ResultadoInscripcionResp) GetRazonRechazo() RazonRechazo {
 	return RazonRechazo_RAZON_NO_ESPECIFICADA
 }
 
+type EntrenadorInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"` // Para generar el campo 'Name' en Go, como usa tu gym.go
+	Ranking       int32                  `protobuf:"varint,3,opt,name=ranking,proto3" json:"ranking,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EntrenadorInfo) Reset() {
+	*x = EntrenadorInfo{}
+	mi := &file_proto_logic_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EntrenadorInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EntrenadorInfo) ProtoMessage() {}
+
+func (x *EntrenadorInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_logic_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EntrenadorInfo.ProtoReflect.Descriptor instead.
+func (*EntrenadorInfo) Descriptor() ([]byte, []int) {
+	return file_proto_logic_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *EntrenadorInfo) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *EntrenadorInfo) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *EntrenadorInfo) GetRanking() int32 {
+	if x != nil {
+		return x.Ranking
+	}
+	return 0
+}
+
+type AsignarCombateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CombateId     string                 `protobuf:"bytes,1,opt,name=combate_id,json=combateId,proto3" json:"combate_id,omitempty"`
+	TorneoId      string                 `protobuf:"bytes,2,opt,name=torneo_id,json=torneoId,proto3" json:"torneo_id,omitempty"`
+	Entrenador_1  *EntrenadorInfo        `protobuf:"bytes,3,opt,name=entrenador_1,json=entrenador1,proto3" json:"entrenador_1,omitempty"` // Usando EntrenadorInfo
+	Entrenador_2  *EntrenadorInfo        `protobuf:"bytes,4,opt,name=entrenador_2,json=entrenador2,proto3" json:"entrenador_2,omitempty"` // Usando EntrenadorInfo
+	Region        string                 `protobuf:"bytes,5,opt,name=region,proto3" json:"region,omitempty"`                              // Para coincidir con req.Region en tu gym.go
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AsignarCombateRequest) Reset() {
+	*x = AsignarCombateRequest{}
+	mi := &file_proto_logic_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AsignarCombateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AsignarCombateRequest) ProtoMessage() {}
+
+func (x *AsignarCombateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_logic_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AsignarCombateRequest.ProtoReflect.Descriptor instead.
+func (*AsignarCombateRequest) Descriptor() ([]byte, []int) {
+	return file_proto_logic_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *AsignarCombateRequest) GetCombateId() string {
+	if x != nil {
+		return x.CombateId
+	}
+	return ""
+}
+
+func (x *AsignarCombateRequest) GetTorneoId() string {
+	if x != nil {
+		return x.TorneoId
+	}
+	return ""
+}
+
+func (x *AsignarCombateRequest) GetEntrenador_1() *EntrenadorInfo {
+	if x != nil {
+		return x.Entrenador_1
+	}
+	return nil
+}
+
+func (x *AsignarCombateRequest) GetEntrenador_2() *EntrenadorInfo {
+	if x != nil {
+		return x.Entrenador_2
+	}
+	return nil
+}
+
+func (x *AsignarCombateRequest) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+type AsignarCombateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Aceptado      bool                   `protobuf:"varint,1,opt,name=aceptado,proto3" json:"aceptado,omitempty"`
+	Mensaje       string                 `protobuf:"bytes,2,opt,name=mensaje,proto3" json:"mensaje,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AsignarCombateResponse) Reset() {
+	*x = AsignarCombateResponse{}
+	mi := &file_proto_logic_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AsignarCombateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AsignarCombateResponse) ProtoMessage() {}
+
+func (x *AsignarCombateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_logic_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AsignarCombateResponse.ProtoReflect.Descriptor instead.
+func (*AsignarCombateResponse) Descriptor() ([]byte, []int) {
+	return file_proto_logic_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *AsignarCombateResponse) GetAceptado() bool {
+	if x != nil {
+		return x.Aceptado
+	}
+	return false
+}
+
+func (x *AsignarCombateResponse) GetMensaje() string {
+	if x != nil {
+		return x.Mensaje
+	}
+	return ""
+}
+
 var File_proto_logic_proto protoreflect.FileDescriptor
 
 const file_proto_logic_proto_rawDesc = "" +
@@ -392,16 +582,33 @@ const file_proto_logic_proto_rawDesc = "" +
 	"\x14torneo_id_confirmado\x18\x03 \x01(\tR\x12torneoIdConfirmado\x12>\n" +
 	"\x1bnueva_suspension_entrenador\x18\x04 \x01(\x05R\x19nuevaSuspensionEntrenador\x126\n" +
 	"\x17nuevo_estado_entrenador\x18\x05 \x01(\tR\x15nuevoEstadoEntrenador\x128\n" +
-	"\rrazon_rechazo\x18\x06 \x01(\x0e2\x13.proto.RazonRechazoR\frazonRechazo*\xa9\x01\n" +
+	"\rrazon_rechazo\x18\x06 \x01(\x0e2\x13.proto.RazonRechazoR\frazonRechazo\"N\n" +
+	"\x0eEntrenadorInfo\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
+	"\aranking\x18\x03 \x01(\x05R\aranking\"\xdf\x01\n" +
+	"\x15AsignarCombateRequest\x12\x1d\n" +
+	"\n" +
+	"combate_id\x18\x01 \x01(\tR\tcombateId\x12\x1b\n" +
+	"\ttorneo_id\x18\x02 \x01(\tR\btorneoId\x128\n" +
+	"\fentrenador_1\x18\x03 \x01(\v2\x15.proto.EntrenadorInfoR\ventrenador1\x128\n" +
+	"\fentrenador_2\x18\x04 \x01(\v2\x15.proto.EntrenadorInfoR\ventrenador2\x12\x16\n" +
+	"\x06region\x18\x05 \x01(\tR\x06region\"N\n" +
+	"\x16AsignarCombateResponse\x12\x1a\n" +
+	"\baceptado\x18\x01 \x01(\bR\baceptado\x12\x18\n" +
+	"\amensaje\x18\x02 \x01(\tR\amensaje*\xcf\x01\n" +
 	"\fRazonRechazo\x12\x19\n" +
 	"\x15RAZON_NO_ESPECIFICADA\x10\x00\x12\x16\n" +
 	"\x12RECHAZO_SUSPENDIDO\x10\x01\x12&\n" +
 	"\"RECHAZO_YA_INSCRITO_EN_OTRO_TORNEO\x10\x02\x12\x1c\n" +
 	"\x18RECHAZO_TORNEO_NO_EXISTE\x10\x03\x12 \n" +
-	"\x1cRECHAZO_ENTRENADOR_EXPULSADO\x10\x042\xb3\x01\n" +
+	"\x1cRECHAZO_ENTRENADOR_EXPULSADO\x10\x04\x12$\n" +
+	" RECHAZO_TORNEO_REGION_INCORRECTA\x10\x052\xb3\x01\n" +
 	"\vLigaPokemon\x12Q\n" +
 	"\x1bConsultarTorneosDisponibles\x12\x19.proto.ConsultaTorneosReq\x1a\x17.proto.ListaTorneosResp\x12Q\n" +
-	"\x11InscribirEnTorneo\x12\x1b.proto.InscripcionTorneoReq\x1a\x1f.proto.ResultadoInscripcionRespB\x14Z\x12DISTROTAREA2/protob\x06proto3"
+	"\x11InscribirEnTorneo\x12\x1b.proto.InscripcionTorneoReq\x1a\x1f.proto.ResultadoInscripcionResp2Y\n" +
+	"\bGimnasio\x12M\n" +
+	"\x0eAsignarCombate\x12\x1c.proto.AsignarCombateRequest\x1a\x1d.proto.AsignarCombateResponseB\x14Z\x12DISTROTAREA2/protob\x06proto3"
 
 var (
 	file_proto_logic_proto_rawDescOnce sync.Once
@@ -416,7 +623,7 @@ func file_proto_logic_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_logic_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_logic_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_proto_logic_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_proto_logic_proto_goTypes = []any{
 	(RazonRechazo)(0),                // 0: proto.RazonRechazo
 	(*Torneo)(nil),                   // 1: proto.Torneo
@@ -424,19 +631,26 @@ var file_proto_logic_proto_goTypes = []any{
 	(*ListaTorneosResp)(nil),         // 3: proto.ListaTorneosResp
 	(*InscripcionTorneoReq)(nil),     // 4: proto.InscripcionTorneoReq
 	(*ResultadoInscripcionResp)(nil), // 5: proto.ResultadoInscripcionResp
+	(*EntrenadorInfo)(nil),           // 6: proto.EntrenadorInfo
+	(*AsignarCombateRequest)(nil),    // 7: proto.AsignarCombateRequest
+	(*AsignarCombateResponse)(nil),   // 8: proto.AsignarCombateResponse
 }
 var file_proto_logic_proto_depIdxs = []int32{
 	1, // 0: proto.ListaTorneosResp.torneos:type_name -> proto.Torneo
 	0, // 1: proto.ResultadoInscripcionResp.razon_rechazo:type_name -> proto.RazonRechazo
-	2, // 2: proto.LigaPokemon.ConsultarTorneosDisponibles:input_type -> proto.ConsultaTorneosReq
-	4, // 3: proto.LigaPokemon.InscribirEnTorneo:input_type -> proto.InscripcionTorneoReq
-	3, // 4: proto.LigaPokemon.ConsultarTorneosDisponibles:output_type -> proto.ListaTorneosResp
-	5, // 5: proto.LigaPokemon.InscribirEnTorneo:output_type -> proto.ResultadoInscripcionResp
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	6, // 2: proto.AsignarCombateRequest.entrenador_1:type_name -> proto.EntrenadorInfo
+	6, // 3: proto.AsignarCombateRequest.entrenador_2:type_name -> proto.EntrenadorInfo
+	2, // 4: proto.LigaPokemon.ConsultarTorneosDisponibles:input_type -> proto.ConsultaTorneosReq
+	4, // 5: proto.LigaPokemon.InscribirEnTorneo:input_type -> proto.InscripcionTorneoReq
+	7, // 6: proto.Gimnasio.AsignarCombate:input_type -> proto.AsignarCombateRequest
+	3, // 7: proto.LigaPokemon.ConsultarTorneosDisponibles:output_type -> proto.ListaTorneosResp
+	5, // 8: proto.LigaPokemon.InscribirEnTorneo:output_type -> proto.ResultadoInscripcionResp
+	8, // 9: proto.Gimnasio.AsignarCombate:output_type -> proto.AsignarCombateResponse
+	7, // [7:10] is the sub-list for method output_type
+	4, // [4:7] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_proto_logic_proto_init() }
@@ -450,9 +664,9 @@ func file_proto_logic_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_logic_proto_rawDesc), len(file_proto_logic_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   5,
+			NumMessages:   8,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_proto_logic_proto_goTypes,
 		DependencyIndexes: file_proto_logic_proto_depIdxs,

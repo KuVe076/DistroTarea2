@@ -1,41 +1,116 @@
-# DISTROTAREA2/docker-compose.yml
+version: '3.8'
+
 services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: rabbitmq_pokemon_lab
-    ports: ["5672:5672", "15672:15672"]
-    healthcheck: {test: ["CMD", "rabbitmqctl", "status"], interval: 10s, timeout: 5s, retries: 5}
-    networks: [pokemon_network]
+    ports:
+      - "5672:5672"  # Puerto AMQP para los servicios Go
+      - "15672:15672" # Puerto para la interfaz de administración web de RabbitMQ
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq # Persistir datos de RabbitMQ (opcional)
+    healthcheck: # Esperar a que RabbitMQ esté completamente listo
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10 # Aumentar reintentos si RabbitMQ tarda en iniciar
+    networks:
+      - pokemon_network
 
   lcp:
     build:
-      context: . # Contexto es la raíz del proyecto (DISTROTAREA2)
-      dockerfile: LCP/Dockerfile # Ruta al Dockerfile desde la raíz
+      context: . # Contexto es la raíz del proyecto (DISTROTAREA2/)
+      dockerfile: LCP/Dockerfile # Ruta al Dockerfile de LCP
     container_name: lcp_service
-    ports: ["50051:50051"]
-    depends_on: {rabbitmq: {condition: service_healthy}}
-    environment: {RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"}
-    networks: [pokemon_network]
+    ports:
+      - "50051:50051" # Exponer el puerto gRPC de LCP al host
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      # Los gimnasios deberían estar disponibles para que LCP se conecte
+      gimnasios:
+        condition: service_started # O service_healthy si los gimnasios tuvieran healthcheck
+    networks:
+      - pokemon_network
+    # environment:
+      # Si pasas la ruta del JSON como variable de entorno a LCP:
+      # LCP_REGISTRO_ENTRENADORES_FILE: "/app_distro/entrenadores_pequeno.json"
 
   snp:
     build:
       context: .
-      dockerfile: SNP/Dockerfile # Ruta al Dockerfile desde la raíz
+      dockerfile: SNP/Dockerfile
     container_name: snp_service
-    depends_on: {rabbitmq: {condition: service_healthy}, lcp: {condition: service_started}}
-    environment: {RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"}
-    networks: [pokemon_network]
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      lcp: # SNP depende de eventos de LCP
+        condition: service_started
+    networks:
+      - pokemon_network
 
-  entrenador:
+  cdp:
     build:
       context: .
-      dockerfile: Entrenador/Dockerfile # Ruta al Dockerfile desde la raíz
+      dockerfile: CDP/Dockerfile
+    container_name: cdp_service
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      # Si CDP llama a LCP para validar entrenadores, añadir dependencia:
+      # lcp:
+      #   condition: service_started
+    networks:
+      - pokemon_network
+    # environment: # Ejemplo si necesitas pasar claves como variables de entorno
+      # GYM_KANTO_KEY: "SushiSashimiTempuraWasabiMirin" 
+      # (y luego leerlas en cdp.go desde os.Getenv)
+
+  gimnasios: # Un solo servicio para todos los gimnasios regionales
+    build:
+      context: .
+      dockerfile: Gym/Dockerfile
+    container_name: gimnasios_regionales_service
+    # Mapear todos los puertos de los gimnasios que LCP necesita contactar
+    # y que podrías querer acceder desde el host para pruebas directas.
+    ports:
+      - "50052:50052" # Kanto
+      - "50053:50053" # Johto
+      - "50054:50054" # Hoenn
+      - "50055:50055" # Sinnoh
+      - "50056:50056" # Teselia
+      - "50057:50057" # Kalos
+      - "50058:50058" # Alola
+      - "50059:50059" # Galar
+      - "50060:50060" # Paldea
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - pokemon_network
+
+  entrenador: # El cliente interactivo
+    build:
+      context: .
+      dockerfile: Entrenador/Dockerfile
     container_name: entrenador_client
-    stdin_open: true
-    tty: true
-    depends_on: {rabbitmq: {condition: service_healthy}, lcp: {condition: service_started}}
-    environment: {RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/", LCP_GRPC_ADDRESS: "lcp:50051"}
-    networks: [pokemon_network]
+    stdin_open: true # Necesario para la interacción por consola (para leer entrada)
+    tty: true        # Necesario para la interacción por consola (para que funcione como un terminal)
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      lcp:
+        condition: service_started # El entrenador necesita que LCP esté escuchando gRPC
+      snp: # El entrenador escucha notificaciones del SNP
+        condition: service_started
+      gimnasios: # Aunque el entrenador no llama directamente a los gimnasios, LCP sí.
+        condition: service_started
+    networks:
+      - pokemon_network
+
+volumes:
+  rabbitmq_data: # Define un volumen para persistir los datos de RabbitMQ (opcional para desarrollo)
 
 networks:
-  pokemon_network: {driver: bridge}
+  pokemon_network: # Define una red personalizada para que los contenedores se comuniquen por nombre
+    driver: bridge

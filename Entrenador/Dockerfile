@@ -9,7 +9,7 @@ RUN go mod download && go mod verify
 
 COPY proto ./proto
 COPY Entrenador/entrenador.go . 
-COPY entrenadores_pequeno.json . 
+COPY Entrenador/entrenadores_pequeno.json ./entrenadores_pequeno.json
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /entrenadores_app entrenador.go
 

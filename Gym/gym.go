@@ -1,4 +1,5 @@
 package main
+
 import (
 	"context"
 	"crypto/aes"
@@ -11,49 +12,54 @@ import (
 	"log"
 	"math"
 	mrand "math/rand"
+	"net"
+	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
 	"time"
+
+	pb "DISTROTAREA2/proto"
+
+	amqp "github.com/streadway/amqp"
+
+	"google.golang.org/grpc"
+)
+
+const (
+	rabbitURL            = "amqp://guest:guest@rabbitmq:5672/"
+	resultadosExchange   = "resultados_exchange"
+	resultadosRoutingKey = "resultados.combate"
 )
 
 type ResultadoCombate struct {
-	TorneoID	      string `json:"torneo_id"`
+	TorneoID          string `json:"torneo_id"`
 	IDEntrenador1     string `json:"id_entrenador_1"`
 	NombreEntrenador1 string `json:"nombre_entrenador_1"`
-	IDEntrenador2 	  string `json:"id_entrenador_2"`
+	IDEntrenador2     string `json:"id_entrenador_2"`
 	NombreEntrenador2 string `json:"nombre_entrenador_2"`
-	IDWinner	      string `json:"id_winner"`
-	NombreWinner	  string `json:"nombre_winner"`
-	Fecha			  string `json:"fecha"`
-	TipoMensaje		  string `json:"tipo_mensaje"`
-	CombateID 		  string `json:"combate_id"`
+	IDWinner          string `json:"id_winner"`
+	NombreWinner      string `json:"nombre_winner"`
+	Fecha             string `json:"fecha"`
+	TipoMensaje       string `json:"tipo_mensaje"`
+	CombateID         string `json:"combate_id"`
 }
 
 type serverGimnasio struct {
 	pb.UnimplementedGimnasioServer
 	nombreGimnasio  string
 	region          string
-	aesKey			[]byte
+	aesKey          []byte
 	rabbitMQChannel *amqp.Channel
-	rabbitMQConn	*amqp.Connection
-}
-
-const []regiones{
-	"Kanto",
-	"Johto",
-	"Hoenn",
-	"Sinnoh",
-	"Teselia",
-	"Kalos",
-	"Alola",
-	"Galar",
-	"Paldea",
+	rabbitMQConn    *amqp.Connection
 }
 
 func NewGimnasioServer(nombre, region string, aesKey []byte, conn *amqp.Connection, ch *amqp.Channel) *serverGimnasio {
 	mrand.Seed(time.Now().UnixNano())
 	return &serverGimnasio{
 		nombreGimnasio:  nombre,
-		region:			 region,
-		aesKey:			 aesKey,
+		region:          region,
+		aesKey:          aesKey,
 		rabbitMQChannel: ch,
 		rabbitMQConn:    conn,
 	}
@@ -74,42 +80,41 @@ func encryptAES_CGM(plaintext []byte, key []byte) ([]byte, error) {
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, err
 	}
-	
+
 	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
-	return ciphertext, nile
+	return ciphertext, nil
 }
 
-func (s *serverGimnasio) AsignarCombate(ctx context.Conext, req *pb.AsignarRequest) (*pb.AsignarResponse, error) {
+func (s *serverGimnasio) AsignarCombate(ctx context.Context, req *pb.AsignarCombateRequest) (*pb.AsignarCombateResponse, error) {
 	if req.Region != s.region {
 		msg := fmt.Sprintf("Gimnasio %s no opera en la región de %s", s.nombreGimnasio, req.Region)
 		log.Println(msg)
-		return &pb.AsingarResponse{
+		return &pb.AsignarCombateResponse{
 			Aceptado: false,
-			Mensaje: msg,
+			Mensaje:  msg,
 		}, nil
 	}
 
 	time.Sleep(time.Duration(3 * time.Second))
 
-	idWinner, nombreWinner := SimularCombate(req.Entrenador1, req.Entrenador2)
-	fechaCombate := time.Now().Format("19-05-2025")
+	idWinner, nombreWinner := SimularCombate(req.Entrenador_1, req.Entrenador_2)
+	fechaCombate := time.Now().Format("2006-01-02")
 	resultado := ResultadoCombate{
-		TorneoID: 		   req.TorneoId,
-		CombateID: 		   req.CombateId,
-		IDEntrenador1: 	   req.Entrenador_1.Id,
+		TorneoID:          req.TorneoId,
+		CombateID:         req.CombateId,
+		IDEntrenador1:     req.Entrenador_1.Id,
 		NombreEntrenador1: req.Entrenador_1.Name,
 		IDEntrenador2:     req.Entrenador_2.Id,
 		NombreEntrenador2: req.Entrenador_2.Name,
-		IDWinner: 		   idWinner,
+		IDWinner:          idWinner,
 		NombreWinner:      nombreWinner,
-		Fecha:			   fechaCombate,
-
+		Fecha:             fechaCombate,
 	}
 
 	jsonData, err := json.Marshal(resultado)
 	if err != nil {
 		log.Printf("Error al serializar json: %v", err)
-		return &pb.AsignarResponse{
+		return &pb.AsignarCombateResponse{
 			Aceptado: false,
 			Mensaje:  "Error interno",
 		}, err
@@ -118,44 +123,44 @@ func (s *serverGimnasio) AsignarCombate(ctx context.Conext, req *pb.AsignarReque
 	textoCifrado, err := encryptAES_CGM(jsonData, s.aesKey)
 	if err != nil {
 		log.Printf("Error al cifrar resultado: %v", err)
-		return &pb.AsignarResponse{
+		return &pb.AsignarCombateResponse{
 			Aceptado: false,
 			Mensaje:  "Error interno",
 		}, err
 	}
 
 	mensajeCifradoBase64 := base64.StdEncoding.EncodeToString(textoCifrado)
-	
+
 	maxRetries := 3
 	var publishError error
 	for i := 0; i < maxRetries; i++ {
-		publishError = &s.rabbitMQChannel.PublishWithContext(
-			ctx,
+		publishError = s.rabbitMQChannel.Publish(
 			resultadosExchange,
 			resultadosRoutingKey,
 			false,
 			false,
 			amqp.Publishing{
-				ContentType: "text/plain",
-				Body:		 []byte(mensajeCifradoBase64),
-				MessageId: 	 resultado.CombateID,
-				AppId: 		 s.nombreGimnasio,
-			}
+				ContentType: "application/json",
+				Body:        []byte(mensajeCifradoBase64),
+				MessageId:   resultado.CombateID,
+				AppId:       s.nombreGimnasio,
+			},
 		)
 		if publishError == nil {
+			log.Printf("Gimnasio %s: Resultado del combate %s enviado exitosamente a RabbitMQ.", s.nombreGimnasio, resultado.CombateID)
 			break
 		}
 
-		if i < maxRetries - 1 { 
+		if i < maxRetries-1 {
 			time.Sleep(time.Duration(time.Second * 3))
 		}
-		
-		return &pb.AsingarResponse{
-			Aceptado: true,
-			Mensaje:  "Combate Aceptado y preparándose para el envío por " + s.nombreGimnasio,
-		}, nil
-		
+
 	}
+
+	return &pb.AsignarCombateResponse{
+		Aceptado: true,
+		Mensaje:  "Combate Aceptado y preparándose para el envío por " + s.nombreGimnasio,
+	}, nil
 }
 
 func SimularCombate(ent1, ent2 *pb.EntrenadorInfo) (idWinner string, NombreWinner string) {
@@ -163,7 +168,7 @@ func SimularCombate(ent1, ent2 *pb.EntrenadorInfo) (idWinner string, NombreWinne
 	k := 100.0
 	prob := 1.0 / (1.0 + math.Exp(-diff/k))
 
-	if mrand.Float64() <= prob{
+	if mrand.Float64() <= prob {
 		return ent1.Id, ent1.Name
 	}
 	return ent2.Id, ent2.Name
@@ -178,7 +183,7 @@ func ConnectToRabbitMQ(url string) (*amqp.Connection, *amqp.Channel, error) {
 	ch, err := conn.Channel()
 	if err != nil {
 		conn.Close()
-		return nil, nil, fmt.Error("Fallo al abrir canal: %v", err)
+		return nil, nil, fmt.Errorf("Fallo al abrir canal: %v", err)
 	}
 
 	err = ch.ExchangeDeclare(
@@ -193,14 +198,14 @@ func ConnectToRabbitMQ(url string) (*amqp.Connection, *amqp.Channel, error) {
 	if err != nil {
 		ch.Close()
 		conn.Close()
-		return nil, nil, fmt.Error("Fallo al declarar Exchange: %v", err)
+		return nil, nil, fmt.Errorf("Fallo al declarar Exchange: %v", err)
 	}
 
 	return conn, ch, nil
 }
 
-func IniciarServerGimnasio(nombreGimnasio string, region string, aesKey []byte, chRabbit *amqp.Channel, port string) {
-	lis, err := net.listen("tcp", port)
+func IniciarServerGimnasio(nombreGimnasio string, region string, aesKey []byte, connRabbit *amqp.Connection, chRabbit *amqp.Channel, port string) {
+	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatalf("Error al escuchar: %v", err)
 	}
@@ -216,16 +221,16 @@ func IniciarServerGimnasio(nombreGimnasio string, region string, aesKey []byte, 
 }
 
 func main() {
-	PassKanto := "SushiSashimiTempuraWasabiMirin"
-	PassJohto := "RamenUdonSobaYakitoriTonkatsu"
-	PassHoenn := "MisoDashiShoyuGariSakeChawan"
-	PassSinnoh := "TeriyakiOkonomiyakiGyozaUnagi"
-	PassTeselia := "MatchaSakuraMochiAnkoDangoYuzu"
-	PassKalos := "KatsuCurryDonburiNattoEdamame"
-	PassAlola := "TeppanyakiFuguOnigiriTsukune"
-	PassGalar := "NigiriMakiGunkanInariTamagoDo"
-	PassPaldea := "BentoBoxShabuKushikatsuKinpira"
-	
+	passKanto := "SushiSashimiTempuraWasabiMirin"
+	passJohto := "RamenUdonSobaYakitoriTonkatsu"
+	passHoenn := "MisoDashiShoyuGariSakeChawan"
+	passSinnoh := "TeriyakiOkonomiyakiGyozaUnagi"
+	passTeselia := "MatchaSakuraMochiAnkoDangoYuzu"
+	passKalos := "KatsuCurryDonburiNattoEdamame"
+	passAlola := "TeppanyakiFuguOnigiriTsukune"
+	passGalar := "NigiriMakiGunkanInariTamagoDo"
+	passPaldea := "BentoBoxShabuKushikatsuKinpira"
+
 	keyKanto := []byte(passKanto)
 	keyJohto := []byte(passJohto)
 	keyHoenn := []byte(passHoenn)
@@ -235,16 +240,28 @@ func main() {
 	keyAlola := []byte(passAlola)
 	keyGalar := []byte(passGalar)
 	keyPaldea := []byte(passPaldea)
-	
+
+	regiones := []string{
+		"Kanto",
+		"Johto",
+		"Hoenn",
+		"Sinnoh",
+		"Teselia",
+		"Kalos",
+		"Alola",
+		"Galar",
+		"Paldea",
+	}
+
 	GymKeys := [][]byte{
-		keyKanto, 
+		keyKanto,
 		keyJohto,
 		keyHoenn,
-		keySinnoh, 
-		keyTeselia, 
-		keyKalos, 
-		keyAlola, 
-		keyGalar, 
+		keySinnoh,
+		keyTeselia,
+		keyKalos,
+		keyAlola,
+		keyGalar,
 		keyPaldea,
 	}
 
@@ -260,13 +277,25 @@ func main() {
 		"Gimnasio Veneno",
 	}
 
-	for i := 0; i < 9; i++ {
-		
+	rabbitConn, rabbitCh, err := ConnectToRabbitMQ(rabbitURL)
+	if err != nil {
+		log.Fatalf("No se pudo conectar a Rabbit: %v", err)
 	}
 
+	puerto_base := 50052
 
+	for i := 0; i < 9; i++ {
+		puerto_actual := ":" + strconv.Itoa(puerto_base+i)
+		go IniciarServerGimnasio(GymNames[i], regiones[i], GymKeys[i], rabbitConn, rabbitCh, puerto_actual)
+
+		log.Printf("El %s está activado", GymNames[i])
+	}
+
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
+	<-stopChan
+
+	log.Println("Terminando gimnasios...")
+
+	log.Println("Gimnasios Terminados")
 }
-
-
-
-

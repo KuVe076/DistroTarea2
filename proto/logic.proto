@@ -2,58 +2,69 @@ syntax = "proto3";
 
 package proto;
 
-option go_package = "DISTROTAREA2/proto"; // Asegúrate que coincida con tu módulo
+option go_package = "DISTROTAREA2/proto";
 
-// El servicio ContactarLCP lo renombraremos a LigaPokemon para seguir el PDF.
-service LigaPokemon { // RENOMBRADO
+// --- Servicio de la Liga Pokemon para Entrenadores ---
+service LigaPokemon {
     rpc ConsultarTorneosDisponibles(ConsultaTorneosReq) returns (ListaTorneosResp);
     rpc InscribirEnTorneo(InscripcionTorneoReq) returns (ResultadoInscripcionResp);
 }
 
-message Torneo {
-    string id = 1;
-    string region = 2;
+message Torneo { 
+    string id = 1; 
+    string region = 2; 
 }
 
 message ConsultaTorneosReq {
-    string solicitante_info = 1; // Cambiado de entrenador_id para ser más genérico
+     string solicitante_info = 1; 
 }
-
-message ListaTorneosResp {
-    repeated Torneo torneos = 1;
+message ListaTorneosResp { 
+    repeated Torneo torneos = 1; 
 }
-
 message InscripcionTorneoReq {
     string torneo_id = 1;
     string entrenador_id = 2;
     string entrenador_nombre = 3;
     string entrenador_region = 4;
-    // El cliente envía la suspensión que CREE tener. LCP validará con su propio registro.
-    // El PDF (pág 4, tabla) muestra que LCP mantiene el estado y suspensión.
-    // La regla de suspensión (pág 5) indica que LCP decrementa.
-    // Así que el cliente no necesita enviar su suspensión, LCP la conoce o la deduce.
-    // Pero para que LCP sepa que el entrenador INTENTA y así aplicar la regla de decremento,
-    // podemos mantenerlo o LCP simplemente lo aplica si el entrenador está suspendido en sus registros.
-    // Por ahora, lo quitaré y LCP usará su propio registro.
-    // int32 entrenador_suspension_actual = 5; // QUITADO
-    // string entrenador_estado_actual = 6;    // QUITADO
 }
 
 enum RazonRechazo {
-    RAZON_NO_ESPECIFICADA = 0;
-    RECHAZO_SUSPENDIDO = 1;
-    RECHAZO_YA_INSCRITO_EN_OTRO_TORNEO = 2; // Más específico
-    RECHAZO_TORNEO_NO_EXISTE = 3;
-    RECHAZO_ENTRENADOR_EXPULSADO = 4;
-    // No necesitamos RECHAZO_ESTADO_INVALIDO si tenemos RECHAZO_ENTRENADOR_EXPULSADO
+    RAZON_NO_ESPECIFICADA = 0; 
+    RECHAZO_SUSPENDIDO = 1; 
+    RECHAZO_YA_INSCRITO_EN_OTRO_TORNEO = 2;
+    RECHAZO_TORNEO_NO_EXISTE = 3; 
+    RECHAZO_ENTRENADOR_EXPULSADO = 4; 
+    RECHAZO_TORNEO_REGION_INCORRECTA = 5;
+}
+message ResultadoInscripcionResp {
+    bool exito = 1; 
+    string mensaje = 2; 
+    string torneo_id_confirmado = 3;
+    int32 nueva_suspension_entrenador = 4; 
+    string nuevo_estado_entrenador = 5; 
+    RazonRechazo razon_rechazo = 6;
 }
 
-message ResultadoInscripcionResp {
-    bool exito = 1;
+// --- Servicio del Gimnasio Regional para LCP ---
+service Gimnasio {
+    rpc AsignarCombate(AsignarCombateRequest) returns (AsignarCombateResponse);
+}
+
+message EntrenadorInfo { // Renombrado para posible claridad si ya tienes otro EntrenadorInfo
+    string id = 1;
+    string name = 2;    // Para generar el campo 'Name' en Go, como usa tu gym.go
+    int32 ranking = 3;
+}
+
+message AsignarCombateRequest {
+    string combate_id = 1;
+    string torneo_id = 2;
+    EntrenadorInfo entrenador_1 = 3; // Usando EntrenadorInfo
+    EntrenadorInfo entrenador_2 = 4; // Usando EntrenadorInfo
+    string region = 5;             // Para coincidir con req.Region en tu gym.go
+}
+
+message AsignarCombateResponse { // Asegúrate que el nombre coincida con lo que gym.go devuelve
+    bool aceptado = 1;
     string mensaje = 2;
-    string torneo_id_confirmado = 3;           // Si exito = true
-    // LCP devuelve el nuevo estado y suspensión para que el cliente se sincronice.
-    int32 nueva_suspension_entrenador = 4;
-    string nuevo_estado_entrenador = 5;        // "Activo", "Suspendido"
-    RazonRechazo razon_rechazo = 6;            // Si exito = false
 }
