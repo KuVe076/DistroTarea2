@@ -221,15 +221,15 @@ func IniciarServerGimnasio(nombreGimnasio string, region string, aesKey []byte, 
 }
 
 func main() {
-	passKanto := "SushiSashimiTempuraWasabiMirin"
-	passJohto := "RamenUdonSobaYakitoriTonkatsu"
-	passHoenn := "MisoDashiShoyuGariSakeChawan"
-	passSinnoh := "TeriyakiOkonomiyakiGyozaUnagi"
-	passTeselia := "MatchaSakuraMochiAnkoDangoYuzu"
-	passKalos := "KatsuCurryDonburiNattoEdamame"
-	passAlola := "TeppanyakiFuguOnigiriTsukune"
-	passGalar := "NigiriMakiGunkanInariTamagoDo"
-	passPaldea := "BentoBoxShabuKushikatsuKinpira"
+	passKanto := "SushiSashimiTempuraWasabiMirinXY"
+	passJohto := "RamenUdonSobaYakitoriTonkatsu12"
+	passHoenn := "MisoDashiShoyuGariSakeChawanABCD" 
+	passSinnoh := "TeriyakiOkonomiyakiGyozaUnagiQW"
+	passTeselia := "MatchaSakuraMochiAnkoDangoYuzuZ"
+	passKalos := "KatsuCurryDonburiNattoEdamameER"
+	passAlola := "TeppanyakiFuguOnigiriTsukuneTYU" 
+	passGalar := "NigiriMakiGunkanInariTamagoDoAS" 
+	passPaldea := "BentoBoxShabuKushikatsuKinpiraF" 
 
 	keyKanto := []byte(passKanto)
 	keyJohto := []byte(passJohto)

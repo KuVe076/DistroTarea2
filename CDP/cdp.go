@@ -21,9 +21,9 @@ const (
 	rabbitURL = "amqp://guest:guest@rabbitmq:5672/"
 	resultadosGymExchange = "resultados_exchange"
 	colaResultadosCDP = "cdp_resultados_cola"
-	routingKeyGym = "resultado.combate"
+	routingKeyGym = "resultados.combate"
 
-	exchangeLCP =  "lcp_datos_validados_exchange"
+	cdpPublicaResultadosExchange =  "cdp_validados_exchange"
 	routingKeyLCP = "resultado.validado.lcp"
 )
 
@@ -69,6 +69,7 @@ func decryptAES_GCM(ciphertextBase64 string, key []byte) ([]byte, error) {
 }
 
 func (cdp *CDP) ProcesarMensajeGym(d amqp.Delivery) {
+	print("Hola")
 	gymKey,_ := cdp.AESKeys[d.AppId]
 
 	plaintext, err := decryptAES_GCM(string(d.Body), gymKey)
@@ -88,7 +89,7 @@ func (cdp *CDP) ProcesarMensajeGym(d amqp.Delivery) {
 	_ , pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer pubCancel()
 	publishError := cdp.rabbitCh.Publish(
-		exchangeLCP,
+		cdpPublicaResultadosExchange,
 		routingKeyLCP,
 		false, false,
 		amqp.Publishing{
@@ -119,15 +120,15 @@ func main() {
 	log.Println("Iniciando Centro de Datos Pokemon...")
 
 	GymKeys := map[string]string{
-		"Gimnasio Agua": "SushiSashimiTempuraWasabiMirin",
-		"Gimnasio Tierra": "RamenUdonSobaYakitoriTonkatsu",
-		"Gimnasio Fuego": "MisoDashiShoyuGariSakeChawan",
-		"Gimnasio Viento": "TeriyakiOkonomiyakiGyozaUnagi",
-		"Gimnasio Éter": "MatchaSakuraMochiAnkoDangoYuzu",
-		"Gimnasio Sopa": "KatsuCurryDonburiNattoEdamame",
-		"Gimnasio Baba": "TeppanyakiFuguOnigiriTsukune",
-		"Gimnasio Madera": "NigiriMakiGunkanInariTamagoDo",
-		"Gimnasio Veneno": "BentoBoxShabuKushikatsuKinpira",
+		"Gimnasio Agua": "SushiSashimiTempuraWasabiMirinXY",
+		"Gimnasio Tierra": "RamenUdonSobaYakitoriTonkatsu12",
+		"Gimnasio Fuego": "MisoDashiShoyuGariSakeChawanABCD",
+		"Gimnasio Viento": "TeriyakiOkonomiyakiGyozaUnagiQW",
+		"Gimnasio Éter": "MatchaSakuraMochiAnkoDangoYuzuZ",
+		"Gimnasio Sopa": "KatsuCurryDonburiNattoEdamameER",
+		"Gimnasio Baba": "TeppanyakiFuguOnigiriTsukuneTYU",
+		"Gimnasio Madera": "NigiriMakiGunkanInariTamagoDoAS",
+		"Gimnasio Veneno": "BentoBoxShabuKushikatsuKinpiraF",
 	}
 
 	GymAESKeys := make(map[string][]byte)
@@ -167,7 +168,7 @@ func main() {
 		log.Fatalf("Fallo al enlazar cola: %v", err)
 	}
 
-	err = chRabbit.ExchangeDeclare(exchangeLCP, "direct", true, false, false, false, nil)
+	err = chRabbit.ExchangeDeclare(cdpPublicaResultadosExchange, "direct", true, false, false, false, nil)
 	if err != nil { 
 		log.Fatalf("Error al definir exchange LCP: %v", err)
 	}

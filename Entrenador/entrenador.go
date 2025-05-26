@@ -20,112 +20,89 @@ import (
 )
 
 const (
-	lcpGrpcAddress       = "lcp:50051"
-	rabbitMQURL          = "amqp://guest:guest@rabbitmq:5672/"
-	snpPublishesExchange = "snp_publishes_notifications_exchange" // Exchange del que el entrenador consume
-	jsonEntrenadoresFile = "entrenadores_pequeno.json"
+	lcpGrpcAddress                 = "lcp:50051"
+	rabbitMQURL                    = "amqp://guest:guest@rabbitmq:5672/"
+	snpPublishesExchange           = "snp_publishes_notifications_exchange"
+	jsonEntrenadoresFile           = "entrenadores_pequeno.json" // Relativo al WORKDIR del contenedor
+	routingKeyEscuchaNuevosTorneos = "notify.torneo.nuevo_disponible" // Debe coincidir con SNP
 )
 
-type EntrenadorApp struct {
-	ID               string
-	Nombre           string
-	Region           string
-	Ranking          int
-	Estado           string // "Activo", "Suspendido", "Expulsado" (actualizado por LCP/SNP)
-	Suspension       int    // Días de suspensión (actualizado por LCP/SNP)
-	TournamentStatus string // "NoInscrito", "InscritoEnLCP", etc.
-	IdTorneoActual   string
-	EsManual         bool
-	mu               sync.Mutex
-	lcpCliente       pb.LigaPokemonClient
-	rabbitMQChannel  *amqp.Channel
-	notifyQueueName  string
-}
-type EntrenadorJSON struct {
-	ID         string `json:"id"`
-	Nombre     string `json:"nombre"`
-	Region     string `json:"region"`
-	Ranking    int    `json:"ranking"`
-	Estado     string `json:"estado"`
-	Suspension int    `json:"suspension"`
-}
-type NotificacionParaEntrenador struct {
-	TipoNotificacion string `json:"tipo_notificacion"`
-	Mensaje          string `json:"mensaje"`
-	EntrenadorID     string `json:"entrenador_id"`
-	TorneoID         string `json:"torneo_id,omitempty"`
-	RegionTorneo     string `json:"region_torneo,omitempty"`
-	Timestamp        string `json:"timestamp"`
-} // Coincidir con SNP
+// --- Structs (EntrenadorApp, EntrenadorJSON, NotificacionParaEntrenador como antes) ---
+type EntrenadorApp struct {ID string; Nombre string; Region string; Ranking int; Estado string; Suspension int; TournamentStatus string; IdTorneoActual string; EsManual bool; mu sync.Mutex; lcpCliente pb.LigaPokemonClient; rabbitMQChannel *amqp.Channel; notifyQueueName string}
+type EntrenadorJSON struct {ID string `json:"id"`; Nombre string `json:"nombre"`; Region string `json:"region"`; Ranking int `json:"ranking"`; Estado string `json:"estado"`; Suspension int `json:"suspension"`}
+type NotificacionParaEntrenador struct {TipoNotificacion string `json:"tipo_notificacion"`; Mensaje string `json:"mensaje"`; EntrenadorID string `json:"entrenador_id,omitempty"`; TorneoID string `json:"torneo_id,omitempty"`; RegionTorneo string `json:"region_torneo,omitempty"`; Timestamp string `json:"timestamp"`}
+
 
 func nuevoEntrenadorApp(e EntrenadorJSON, esM bool, lcpC *grpc.ClientConn, rC *amqp.Connection) (*EntrenadorApp, error) {
 	app := &EntrenadorApp{ID: e.ID, Nombre: e.Nombre, Region: e.Region, Ranking: e.Ranking, Estado: e.Estado, Suspension: e.Suspension, TournamentStatus: "NoInscrito", EsManual: esM, lcpCliente: pb.NewLigaPokemonClient(lcpC)}
-	var err error
-	var q amqp.Queue
-	app.rabbitMQChannel, err = rC.Channel()
-	if err != nil {
-		return nil, fmt.Errorf("[%s] Rabbit Chan: %w", app.ID, err)
-	}
-	err = app.rabbitMQChannel.ExchangeDeclare(snpPublishesExchange, "direct", true, false, false, false, nil)
-	if err != nil {
-		return nil, fmt.Errorf("[%s] SNP ExDeclare: %w", app.ID, err)
-	}
-	// Cola exclusiva, auto-borrable para cada entrenador
-	q, err = app.rabbitMQChannel.QueueDeclare(fmt.Sprintf("entrenador_%s_notify_q", strings.ReplaceAll(app.ID, " ", "_")), false, true, true, false, nil)
-	if err != nil {
-		return nil, fmt.Errorf("[%s] QDeclare: %w", app.ID, err)
-	}
+	var err error; var q amqp.Queue
+	app.rabbitMQChannel, err = rC.Channel(); if err != nil { return nil, fmt.Errorf("[%s] Rabbit Chan: %w", app.ID, err) }
+	
+	err = app.rabbitMQChannel.ExchangeDeclare(snpPublishesExchange, "direct", true, false, false, false, nil) // Asegurar que el exchange exista
+	if err != nil { return nil, fmt.Errorf("[%s] SNP ExDeclare: %w", app.ID, err) }
+
+	// Cola para notificaciones directas y generales
+	q, err = app.rabbitMQChannel.QueueDeclare(
+		fmt.Sprintf("entrenador_%s_q_unified", strings.ReplaceAll(app.ID, " ", "_")), // Nombre único
+		false, true, true, false, nil, // non-durable, auto-delete, exclusive
+	)
+	if err != nil { return nil, fmt.Errorf("[%s] QDeclare unificada: %w", app.ID, err) }
 	app.notifyQueueName = q.Name
-	rk := fmt.Sprintf("notify.entrenador.%s", app.ID)
-	err = app.rabbitMQChannel.QueueBind(app.notifyQueueName, rk, snpPublishesExchange, false, nil)
-	if err != nil {
-		return nil, fmt.Errorf("[%s] QBind: %w", app.ID, err)
-	}
-	log.Printf("[%s] Suscrito a notificaciones (Cola: %s, RK: %s)", app.ID, app.notifyQueueName, rk)
+
+	// Binding para notificaciones directas
+	rkDirecto := fmt.Sprintf("notify.entrenador.%s", app.ID)
+	err = app.rabbitMQChannel.QueueBind(app.notifyQueueName, rkDirecto, snpPublishesExchange, false, nil)
+	if err != nil { return nil, fmt.Errorf("[%s] QBind directo (RK: %s): %w", app.ID, rkDirecto, err) }
+	log.Printf("[%s] Suscrito a notificaciones directas (Cola: %s, RK: %s)", app.ID, app.notifyQueueName, rkDirecto)
+
+	// Binding ADICIONAL para notificaciones generales de nuevos torneos A LA MISMA COLA
+	err = app.rabbitMQChannel.QueueBind(app.notifyQueueName, routingKeyEscuchaNuevosTorneos, snpPublishesExchange, false, nil)
+	if err != nil { return nil, fmt.Errorf("[%s] QBind nuevos torneos (RK: %s): %w", app.ID, routingKeyEscuchaNuevosTorneos, err) }
+	log.Printf("[%s] Suscrito también a notificaciones de nuevos torneos (Cola: %s, RK: %s)", app.ID, app.notifyQueueName, routingKeyEscuchaNuevosTorneos)
+
 	return app, nil
 }
 
 func (app *EntrenadorApp) escucharNotificaciones() {
-	if app.rabbitMQChannel == nil {
-		log.Printf("[%s] RabbitMQ no init.", app.ID)
-		return
-	}
-	var msgs <-chan amqp.Delivery
-	var errConsume error
+	if app.rabbitMQChannel == nil { log.Printf("[%s] RabbitMQ no init.", app.ID); return }
+	var msgs <-chan amqp.Delivery; var errConsume error
 	msgs, errConsume = app.rabbitMQChannel.Consume(app.notifyQueueName, "", true, true, false, false, nil)
-	if errConsume != nil {
-		log.Printf("[%s] Falló consumidor notif: %v", app.ID, errConsume)
-		return
-	}
+	if errConsume != nil { log.Printf("[%s] Falló consumidor notif: %v", app.ID, errConsume); return }
+
 	log.Printf("[%s] Escuchando notificaciones del SNP...", app.ID)
 	for d := range msgs {
-		fmt.Printf("\n[%s] === NOTIFICACIÓN RECIBIDA ===\n%s\n===============================\n", app.ID, string(d.Body))
-		if app.EsManual {
-			fmt.Print("Elige una opción: ")
-		} // Para que el prompt del menú no se pise
+		// Imprimir antes para el manual, para que el prompt no se sobreescriba
+		if app.EsManual { fmt.Println() } // Salto de línea para el prompt
+		log.Printf("[%s] === NOTIFICACIÓN RECIBIDA (RK: %s) ===\n%s\n===============================", app.ID, d.RoutingKey, string(d.Body))
+		if app.EsManual { fmt.Print("Elige una opción: ") } // Volver a imprimir el prompt
 
-		var notif NotificacionParaEntrenador
-		var errUnmarshal error
+		var notif NotificacionParaEntrenador; var errUnmarshal error
 		errUnmarshal = json.Unmarshal(d.Body, &notif)
-		if errUnmarshal != nil {
-			log.Printf("[%s] Error decodificar notif: %v", app.ID, errUnmarshal)
-			continue
-		}
-
+		if errUnmarshal != nil { log.Printf("[%s] Error decodificar notif: %v", app.ID, errUnmarshal); continue }
+		
+		log.Printf("[%s] Notificación decodificada: %+v", app.ID, notif)
 		app.mu.Lock()
-		// Actualizar estado basado en notificaciones relevantes
-		if notif.TipoNotificacion == "CONFIRMACION_INSCRIPCION" && notif.EntrenadorID == app.ID {
-			app.TournamentStatus = "InscritoEnLCP"
-			app.IdTorneoActual = notif.TorneoID
-			app.Estado = "Activo"
-			app.Suspension = 0 // LCP confirma el estado
-			log.Printf("[%s] Estado actualizado por notificación de inscripción.", app.ID)
-		} else if notif.TipoNotificacion == "RECHAZO_INSCRIPCION_SUSPENSION" && notif.EntrenadorID == app.ID {
-			// La suspensión ya se actualizó en la respuesta gRPC de LCP.
-			// Esta notificación es solo informativa.
-			log.Printf("[%s] Notificación de rechazo por suspensión recibida.", app.ID)
+		switch notif.TipoNotificacion {
+		case "CONFIRMACION_INSCRIPCION":
+			if notif.EntrenadorID == app.ID { // Asegurarse que sea para este entrenador
+				app.TournamentStatus = "InscritoEnLCP"; app.IdTorneoActual = notif.TorneoID
+				app.Estado = "Activo"; app.Suspension = 0
+				log.Printf("[%s] Estado actualizado por notificación de inscripción.", app.ID)
+			}
+		case "RECHAZO_INSCRIPCION_SUSPENSION":
+			if notif.EntrenadorID == app.ID {
+				log.Printf("[%s] Notificación de rechazo por suspensión recibida.", app.ID)
+			}
+		case "RECHAZO_INSCRIPCION_EXPULSADO":
+			if notif.EntrenadorID == app.ID {
+				app.Estado = "Expulsado" // SNP podría confirmar el estado
+				log.Printf("[%s] Notificación de rechazo por expulsión recibida. Estado actualizado a Expulsado.", app.ID)
+			}
+		case "NUEVO_TORNEO_DISPONIBLE": // <<<--- NUEVO MANEJO
+			log.Printf("[%s] ¡Nuevo torneo anunciado! ID: %s, Región: %s. Considera consultarlos.", app.ID, notif.TorneoID, notif.RegionTorneo)
+			// El mensaje completo ya se imprimió. El entrenador podría actuar sobre esto si es automático
+			// o el manual lo verá y podrá decidir consultar torneos.
 		}
-		// Aquí se manejarían otras notificaciones como cambios de ranking, nuevos torneos, etc.
 		app.mu.Unlock()
 	}
 	log.Printf("[%s] Consumidor de notificaciones terminado.", app.ID)
@@ -287,7 +264,7 @@ func simularEntrenadorAutomatico(ctx context.Context, app *EntrenadorApp) {
 			// Esto simula que el entrenador hace otras cosas o que los eventos de torneo ocurren espaciados.
 			// La "Regla de Suspensión" implica que el intento de inscripción es lo que decrementa.
 			tiempoEspera := time.Duration(rand.Intn(70)+15) * time.Second // Entre 15 y 40 segundos
-			log.Printf("[%s AUTO] Esperando %v para la próxima acción.", app.Nombre, tiempoEspera)
+			// log.Printf("[%s AUTO] Esperando %v para la próxima acción.", app.Nombre, tiempoEspera)
 			time.Sleep(tiempoEspera)
 		}
 	}
