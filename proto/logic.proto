@@ -4,67 +4,99 @@ package proto;
 
 option go_package = "DISTROTAREA2/proto";
 
-// --- Servicio de la Liga Pokemon para Entrenadores ---
+
+// Definición del servicio gRPC LigaPokemon.
+// Expone los métodos principales para la interacción de los clientes con la Liga Pokémon.
+// Permite consultar los torneos disponibles y realizar la inscripción de entrenadores en torneos.
 service LigaPokemon {
+    // ConsultarTorneosDisponibles permite a un cliente obtener la lista de torneos activos.
     rpc ConsultarTorneosDisponibles(ConsultaTorneosReq) returns (ListaTorneosResp);
+
+    // InscribirEnTorneo permite a un entrenador inscribirse en un torneo específico.
     rpc InscribirEnTorneo(InscripcionTorneoReq) returns (ResultadoInscripcionResp);
 }
 
+// Mensaje que representa un torneo disponible en la Liga Pokémon.
+// Incluye el identificador único del torneo y la región a la que pertenece.
 message Torneo { 
-    string id = 1; 
-    string region = 2; 
+    string id = 1;      // ID único del torneo
+    string region = 2;  // Región donde se realiza el torneo
 }
 
+// ConsultaTorneosReq es el mensaje de solicitud para consultar los torneos disponibles.
+// Incluye información del solicitante (puede ser un identificador, nombre o descripción del cliente).
 message ConsultaTorneosReq {
-     string solicitante_info = 1; 
+     string solicitante_info = 1; // Información del solicitante de la consulta
 }
+
+// ListaTorneosResp es la respuesta a la consulta de torneos disponibles.
+// Contiene una lista de torneos activos en la Liga Pokémon.
 message ListaTorneosResp { 
-    repeated Torneo torneos = 1; 
+    repeated Torneo torneos = 1; // Lista de torneos disponibles
 }
+
+// InscripcionTorneoReq es el mensaje de solicitud para inscribir un entrenador en un torneo.
+// Incluye el ID del torneo, el ID del entrenador, su nombre y la región a la que pertenece.
 message InscripcionTorneoReq {
-    string torneo_id = 1;
-    string entrenador_id = 2;
-    string entrenador_nombre = 3;
-    string entrenador_region = 4;
+    string torneo_id = 1;           // ID del torneo al que se desea inscribir
+    string entrenador_id = 2;       // ID único del entrenador
+    string entrenador_nombre = 3;   // Nombre del entrenador
+    string entrenador_region = 4;   // Región del entrenador
 }
 
+// RazonRechazo es un enum que indica el motivo por el cual una inscripción a torneo fue rechazada.
+// Se utiliza en la respuesta de inscripción para informar al cliente la causa específica del rechazo.
 enum RazonRechazo {
-    RAZON_NO_ESPECIFICADA = 0; 
-    RECHAZO_SUSPENDIDO = 1; 
-    RECHAZO_YA_INSCRITO_EN_OTRO_TORNEO = 2;
-    RECHAZO_TORNEO_NO_EXISTE = 3; 
-    RECHAZO_ENTRENADOR_EXPULSADO = 4; 
-    RECHAZO_TORNEO_REGION_INCORRECTA = 5;
-}
-message ResultadoInscripcionResp {
-    bool exito = 1; 
-    string mensaje = 2; 
-    string torneo_id_confirmado = 3;
-    int32 nueva_suspension_entrenador = 4; 
-    string nuevo_estado_entrenador = 5; 
-    RazonRechazo razon_rechazo = 6;
+    RAZON_NO_ESPECIFICADA = 0;                  // No se especificó una razón concreta
+    RECHAZO_SUSPENDIDO = 1;                     // El entrenador está suspendido
+    RECHAZO_YA_INSCRITO_EN_OTRO_TORNEO = 2;     // El entrenador ya está inscrito en otro torneo
+    RECHAZO_TORNEO_NO_EXISTE = 3;               // El torneo solicitado no existe
+    RECHAZO_ENTRENADOR_EXPULSADO = 4;           // El entrenador está expulsado
+    RECHAZO_TORNEO_REGION_INCORRECTA = 5;       // El torneo no corresponde a la región del entrenador
 }
 
-// --- Servicio del Gimnasio Regional para LCP ---
+// ResultadoInscripcionResp es la respuesta al intentar inscribir un entrenador en un torneo.
+// Indica si la inscripción fue exitosa, un mensaje descriptivo, el ID del torneo confirmado (si aplica),
+// la nueva suspensión y estado del entrenador, y la razón específica de rechazo si corresponde.
+message ResultadoInscripcionResp {
+    bool exito = 1;                         // true si la inscripción fue exitosa, false si fue rechazada
+    string mensaje = 2;                     // Mensaje descriptivo del resultado
+    string torneo_id_confirmado = 3;        // ID del torneo en el que quedó inscrito (si aplica)
+    int32 nueva_suspension_entrenador = 4;  // Nueva cantidad de torneos de suspensión (si aplica)
+    string nuevo_estado_entrenador = 5;     // Nuevo estado del entrenador tras la operación
+    RazonRechazo razon_rechazo = 6;         // Motivo específico del rechazo (si corresponde)
+}
+
+
+// Definición del servicio gRPC Gimnasio.
+// Permite asignar un combate a un gimnasio específico mediante el método AsignarCombate.
 service Gimnasio {
+    // AsignarCombate recibe una solicitud para asignar un combate entre dos entrenadores en un torneo.
+    // Retorna una respuesta indicando si el gimnasio acepta o rechaza el combate.
     rpc AsignarCombate(AsignarCombateRequest) returns (AsignarCombateResponse);
 }
 
-message EntrenadorInfo { // Renombrado para posible claridad si ya tienes otro EntrenadorInfo
-    string id = 1;
-    string name = 2;    // Para generar el campo 'Name' en Go, como usa tu gym.go
-    int32 ranking = 3;
+// EntrenadorInfo representa la información básica de un entrenador para asignación de combates.
+// Incluye el ID único, el nombre y el ranking actual del entrenador.
+message EntrenadorInfo { 
+    string id = 1;      // ID único del entrenador
+    string name = 2;    // Nombre del entrenador
+    int32 ranking = 3;  // Ranking actual del entrenador
 }
 
+// AsignarCombateRequest es el mensaje de solicitud para asignar un combate a un gimnasio.
+// Incluye el ID único del combate, el ID del torneo, la información de ambos entrenadores y la región donde se realizará el combate.
 message AsignarCombateRequest {
-    string combate_id = 1;
-    string torneo_id = 2;
-    EntrenadorInfo entrenador_1 = 3; // Usando EntrenadorInfo
-    EntrenadorInfo entrenador_2 = 4; // Usando EntrenadorInfo
-    string region = 5;             // Para coincidir con req.Region en tu gym.go
+    string combate_id = 1;              // ID único del combate
+    string torneo_id = 2;               // ID del torneo asociado al combate
+    EntrenadorInfo entrenador_1 = 3;    // Información del primer entrenador
+    EntrenadorInfo entrenador_2 = 4;    // Información del segundo entrenador
+    string region = 5;                  // Región donde se asigna el combate
 }
 
-message AsignarCombateResponse { // Asegúrate que el nombre coincida con lo que gym.go devuelve
-    bool aceptado = 1;
-    string mensaje = 2;
+// AsignarCombateResponse es la respuesta del gimnasio al intentar asignar un combate.
+// Indica si el gimnasio acepta el combate y un mensaje descriptivo del resultado.
+message AsignarCombateResponse { 
+    bool aceptado = 1;     // true si el gimnasio acepta el combate, false si lo rechaza
+    string mensaje = 2;    // Mensaje descriptivo del resultado de la asignación
 }
