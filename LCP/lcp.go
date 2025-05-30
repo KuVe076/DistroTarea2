@@ -23,7 +23,7 @@ import (
 // Incluyen puertos, URLs, nombres de exchanges y colas de RabbitMQ, archivos de registro, IDs y parámetros de torneos.
 const (
     lcpPort                     = ":50051"                         // Puerto donde escucha el servidor gRPC de la LCP
-    rabbitMQURL                 = "amqp://guest:guest@rabbitmq:5672/" // URL de conexión a RabbitMQ
+    rabbitMQURL                 = "amqp://guest:guest@dist123:5672/" // URL de conexión a RabbitMQ
     lcpEventsExchange           = "lcp_events_exchange"            // Exchange para eventos generales de la LCP
     routingKeyLCPEvent          = "lcp.event"                      // Routing key para eventos de la LCP
     lcpRegistroEntrenadoresFile = "entrenadores_pequeno.json"      // Archivo JSON con el registro de entrenadores
@@ -208,9 +208,9 @@ func nuevoLCPServer(connRabbit *amqp.Connection) (*lcpServer, error) {
         entrenadoresEnEsperaPorTorneo: make(map[string][]*EntrenadorLCPData),
         gimnasioClientsByRegion:       make(map[string]pb.GimnasioClient),
         gimnasioAddressesByRegion: map[string]string{
-            "Kanto": "gimnasios:50052", "Johto": "gimnasios:50053", "Hoenn": "gimnasios:50054",
-            "Sinnoh": "gimnasios:50055", "Teselia": "gimnasios:50056", "Kalos": "gimnasios:50057",
-            "Alola": "gimnasios:50058", "Galar": "gimnasios:50059", "Paldea": "gimnasios:50060",
+            "Kanto": "dist123:50052", "Johto": "dist123:50053", "Hoenn": "dist123:50054",
+            "Sinnoh": "dist123:50055", "Teselia": "dist123:50056", "Kalos": "dist123:50057",
+            "Alola": "dist123:50058", "Galar": "dist123:50059", "Paldea": "dist123:50060",
         },
         shutdownChan: make(chan struct{}),
     }

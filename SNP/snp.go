@@ -10,7 +10,7 @@ import (
 )
 
 const (
-    rabbitMQURL          = "amqp://guest:guest@rabbitmq:5672/" // URL de conexión a RabbitMQ
+    rabbitMQURL          = "amqp://guest:guest@dist123:5672/" // URL de conexión a RabbitMQ
     lcpEventsExchange    = "lcp_events_exchange"                // Exchange donde la LCP publica eventos generales
     snpConsumesQueueName = "snp_consumes_lcp_events_queue"      // Cola donde SNP consume eventos de la LCP
     routingKeyLCPEvent   = "lcp.event"                         // Routing key para eventos generales de la LCP

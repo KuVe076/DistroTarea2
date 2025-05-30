@@ -20,8 +20,8 @@ import (
 )
 
 const (
-    lcpGrpcAddress                 = "lcp:50051" // Dirección del servidor gRPC de la Liga Pokémon Central (LCP)
-    rabbitMQURL                    = "amqp://guest:guest@rabbitmq:5672/" // URL de conexión a RabbitMQ
+    lcpGrpcAddress                 = "dist121:50051" // Dirección del servidor gRPC de la Liga Pokémon Central (LCP)
+    rabbitMQURL                    = "amqp://guest:guest@dist123:5672/" // URL de conexión a RabbitMQ
     snpPublishesExchange           = "snp_publishes_notifications_exchange" // Nombre del exchange para notificaciones del SNP
     jsonEntrenadoresFile           = "entrenadores_pequeno.json"      // Archivo JSON con los datos de los entrenadores automáticos
     routingKeyEscuchaNuevosTorneos = "notify.torneo.nuevo_disponible" // Routing key para notificaciones de nuevos torneos

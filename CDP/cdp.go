@@ -19,7 +19,7 @@ import (
 
 const (
 	// URL de conexión a RabbitMQ (usuario: guest, password: guest, host: rabbitmq, puerto: 5672)
-	rabbitURL = "amqp://guest:guest@rabbitmq:5672/"
+	rabbitURL = "amqp://guest:guest@dist123:5672/"
 
 	// Nombre del exchange donde los gimnasios publican los resultados de los combates
 	resultadosGymExchange = "resultados_exchange"
